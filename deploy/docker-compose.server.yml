@@ -1,0 +1,28 @@
+# Vorlage für den Betrieb hinter Traefik (NixOS-Server, Auto-Update via Watchtower).
+# Auf dem Server liegt das unter /home/timo/apps/talking-circle/docker-compose.yml.
+#
+# Der Hash für die Anmeldung wird auf dem Server erzeugt und steht NICHT im Repo:
+#   PW=$(openssl rand -base64 15); openssl passwd -apr1 "$PW"
+# Im Label muss jedes $ verdoppelt werden ($$), sonst frisst Compose es.
+services:
+  redekreis:
+    image: ghcr.io/antontranelis/talking-circle:latest
+    container_name: talking-circle
+    network_mode: bridge
+    restart: unless-stopped
+    volumes:
+      - modelle:/models
+      - ./transcripts:/app/transcripts
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redekreis.rule=Host(`redekreis.real-life.org`)"
+      - "traefik.http.routers.redekreis.entrypoints=websecure"
+      - "traefik.http.routers.redekreis.tls.certresolver=letsencrypt"
+      # Ohne Anmeldung wäre die laufende Runde für jeden lesbar, der die Adresse kennt.
+      - "traefik.http.routers.redekreis.middlewares=redekreis-auth"
+      - "traefik.http.middlewares.redekreis-auth.basicauth.users=kreis:HASH-HIER-EINSETZEN"
+      - "traefik.http.services.redekreis.loadbalancer.server.port=8123"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+volumes:
+  modelle:

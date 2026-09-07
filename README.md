@@ -55,6 +55,24 @@ Das Abbild ist rund 320 MB groß, enthält kein Modell und läuft auf `amd64` un
 direkt, andere Geräte im Netz sehen die Runde mit, dürfen aber nicht aufnehmen
 (Browser geben das Mikrofon nur über `localhost` oder HTTPS frei).
 
+## Auf einem Server
+
+`deploy/docker-compose.server.yml` ist die Vorlage für den Betrieb hinter
+Traefik mit automatischem Zertifikat und Auto-Update über Watchtower.
+
+Zwei Dinge sind dabei nicht optional:
+
+- **HTTPS.** Browser geben das Mikrofon nur über `localhost` oder eine
+  gesicherte Verbindung frei. Ohne Zertifikat siehst du die Seite, kannst aber
+  nicht aufnehmen.
+- **Eine Anmeldung davor.** Die App selbst kennt keine Benutzer: wer die
+  Adresse hat, liest die laufende Runde mit und kann sie steuern. In der
+  Vorlage erledigt das eine Basis-Anmeldung in Traefik.
+
+Gemessen auf einem 4-vCPU-Xeon (Skylake): **3,3x Echtzeit**, langsamster
+Encoder-Durchgang 633 ms bei 1120 ms Budget, 1,3 GB Arbeitsspeicher. Vier
+Kerne sind die sinnvolle Untergrenze, zwei reichen nur ohne Puffer.
+
 ## Ablauf einer Runde
 
 Beim ersten Aufruf landet ihr auf der **Einrichtung**: Titel, Namen in der
