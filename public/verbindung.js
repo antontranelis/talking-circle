@@ -5,7 +5,10 @@ const horcher = new Set();
 export function verbinden(beiNachricht) {
   horcher.add(beiNachricht);
   if (ws) return;
-  ws = new WebSocket(`ws://${location.host}`);
+  // Hinter HTTPS muss die Leitung wss: sein — sonst blockiert der Browser sie
+  // als unsicheren Inhalt und die Seite bleibt stumm.
+  const schema = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${schema}//${location.host}`);
   ws.binaryType = "arraybuffer";
   ws.addEventListener("message", (ev) => {
     const m = JSON.parse(ev.data);
