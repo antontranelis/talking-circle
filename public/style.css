@@ -1,0 +1,133 @@
+:root {
+  --grund: #14110f;
+  --flaeche: #1d1917;
+  --flaeche-hoch: #241f1c;
+  --rand: #322c28;
+  --text: #f2ece6;
+  --gedimmt: #9a8f86;
+  --akzent: #e5a05c;
+  --akzent-weich: #6b4a26;
+  --zu-lang: #e07a5f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
+h2 { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gedimmt); margin: 0; }
+a { color: inherit; }
+
+button, .klein {
+  font: inherit; cursor: pointer; border-radius: 10px;
+  border: 1px solid var(--rand); background: var(--flaeche); color: var(--text);
+}
+button:hover, a.klein:hover { border-color: var(--akzent); }
+.gross { padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 600; background: var(--akzent); color: #221a12; border-color: transparent; }
+.gross:hover { filter: brightness(1.08); border-color: transparent; }
+.klein { padding: 0.4rem 0.75rem; font-size: 0.85rem; color: var(--gedimmt); text-decoration: none; display: inline-block; }
+kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; opacity: 0.55; border-radius: 5px; padding: 0.25em 0.4em; margin-left: 0.5em; }
+.status { color: var(--gedimmt); font-size: 0.85rem; margin: 0; }
+.status.fehler { color: #e88b7a; }
+.platzhalter { color: var(--gedimmt); font-size: 1rem; }
+
+/* --- Einrichtung: eigene Seite, eine Karte, kein Scrollen --- */
+.seite-einrichtung {
+  min-height: 100vh; display: grid; place-items: center; padding: 2rem 1.5rem;
+}
+.karte {
+  width: min(46rem, 100%);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.4rem;
+  background: var(--flaeche); border: 1px solid var(--rand); border-radius: 18px; padding: 2rem;
+}
+.karte > header, .karte > footer, .feld-weit { grid-column: 1 / -1; }
+.karte > header h1 { font-size: 1.6rem; }
+.lead { color: var(--gedimmt); margin: 0.35rem 0 0; }
+.karte > footer { display: flex; align-items: center; gap: 1rem; margin-top: 0.4rem; }
+/* min-width: 0 — sonst drücken die Mindestbreiten von Auswahl und Textfeld
+   die Spalten über die Karte hinaus. */
+.feld { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; min-width: 0; }
+.feld em { color: var(--gedimmt); font-style: normal; font-size: 0.85em; }
+.feld input, .feld textarea, .feld select {
+  font: inherit; padding: 0.6rem 0.7rem; border-radius: 10px; width: 100%; max-width: 100%;
+  border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--text);
+}
+.feld textarea { resize: vertical; line-height: 1.6; }
+.feld span { overflow-wrap: anywhere; }
+
+/* --- Kreis: Kopf, zwei Spalten, Fuß --- */
+.seite-kreis {
+  height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1rem; padding: 1rem 1.5rem 1.2rem;
+}
+.kopf { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.kopf-links { display: flex; align-items: baseline; gap: 0.6rem; }
+.kopf-rechts { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+.modell { color: var(--gedimmt); font-size: 0.7rem; }
+
+.runde { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.runde button { padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.85rem; color: var(--gedimmt); }
+.runde button.dran { background: var(--akzent); color: #221a12; border-color: transparent; font-weight: 600; }
+.runde button.war { color: var(--text); border-color: var(--akzent-weich); }
+
+.tafel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 1rem; min-height: 0; }
+
+.buehne {
+  display: flex; flex-direction: column; gap: 1.2rem; min-height: 0;
+  background: var(--flaeche); border: 1px solid var(--rand); border-radius: 16px; padding: 1.6rem 1.8rem;
+}
+.buehne-kopf { display: flex; align-items: center; gap: 1rem; }
+.sprecher { font-size: 1.35rem; font-weight: 600; color: var(--akzent); }
+.sprecher.still { color: var(--gedimmt); font-weight: 400; }
+.uhr { color: var(--gedimmt); font-variant-numeric: tabular-nums; font-size: 0.95rem; transition: color 0.4s; }
+.uhr.bald { color: var(--akzent); }
+.uhr.ueber { color: var(--zu-lang); font-weight: 600; }
+
+/* Redezeit überschritten: die Bühne bekommt einen ruhigen, klaren Rand. */
+.zeit-um .buehne { border-color: var(--zu-lang); box-shadow: 0 0 0 1px var(--zu-lang) inset; }
+.zeit-um .sprecher { color: var(--zu-lang); }
+.pegel { margin-left: auto; width: 90px; height: 5px; border-radius: 3px; background: var(--rand); overflow: hidden; }
+.pegel i { display: block; height: 100%; width: 0; background: var(--akzent); transition: width 90ms linear; }
+.live { flex: 1; margin: 0; overflow-y: auto; font-size: clamp(1.4rem, 2.4vw, 2.2rem); line-height: 1.45; }
+.live .offen { color: var(--gedimmt); }
+
+.verlauf {
+  display: flex; flex-direction: column; gap: 0.9rem; min-height: 0;
+  background: var(--flaeche); border: 1px solid var(--rand); border-radius: 16px; padding: 1.3rem 1.4rem;
+}
+.verlauf ol { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1.1rem; }
+.verlauf li { display: flex; flex-direction: column; gap: 0.25rem; }
+.eintrag-kopf { display: flex; align-items: baseline; gap: 0.5rem; }
+.wer { color: var(--akzent); font-weight: 600; font-size: 0.9rem; }
+.wann { color: var(--gedimmt); font-size: 0.75rem; }
+.weg { opacity: 0; margin-left: auto; background: none; border: none; color: var(--gedimmt); padding: 0 0.3rem; line-height: 1; }
+.verlauf li:hover .weg { opacity: 1; }
+.was { color: var(--text); font-size: 0.95rem; outline: none; border-radius: 6px; }
+.was:focus { box-shadow: 0 0 0 2px var(--akzent-weich); }
+
+.fuss { display: flex; align-items: center; gap: 1rem; }
+.datei { color: var(--gedimmt); font-size: 0.75rem; margin-left: auto; }
+
+/* --- Ablenkungsfrei: nur, wer dran ist --- */
+.ohne-text .live,
+.ohne-text .verlauf,
+.ohne-text .datei { display: none; }
+.ohne-text .tafel { grid-template-columns: minmax(0, 1fr); }
+.ohne-text .buehne { align-items: center; justify-content: center; text-align: center; }
+.ohne-text .buehne-kopf { flex-direction: column; gap: 1.2rem; }
+.ohne-text .sprecher { font-size: clamp(3rem, 11vw, 8rem); line-height: 1.05; }
+.ohne-text .uhr { font-size: clamp(1.6rem, 4vw, 3rem); }
+.ohne-text .pegel { margin: 0; width: 160px; height: 6px; }
+
+@media (max-width: 900px) {
+  .karte { grid-template-columns: 1fr; }
+  .seite-kreis { height: auto; min-height: 100vh; }
+  .tafel { grid-template-columns: 1fr; }
+}

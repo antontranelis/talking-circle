@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redekreis</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2712%27 fill=%27none%27 stroke=%27%23e5a05c%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%274%27 r=%274%27 fill=%27%23e5a05c%27/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="seite-kreis">
+  <header class="kopf">
+    <div class="kopf-links">
+      <h1 id="kopf-titel">Redekreis</h1>
+      <span id="modell" class="modell"></span>
+    </div>
+    <nav id="runde" class="runde" aria-label="Kreis"></nav>
+    <div class="kopf-rechts">
+      <a class="klein" href="/einrichtung.html">Einrichtung</a>
+      <button id="export" class="klein" type="button">Protokoll laden</button>
+      <button id="fokus" class="klein" type="button">Nur Sprecher</button>
+      <button id="neu" class="klein" type="button">Neue Runde</button>
+      <button id="vollbild" class="klein" type="button">Vollbild</button>
+    </div>
+  </header>
+
+  <main class="tafel">
+    <section class="buehne">
+      <div class="buehne-kopf">
+        <span id="sprecher" class="sprecher still">Niemand spricht</span>
+        <span id="uhr" class="uhr"></span>
+        <span id="pegel" class="pegel"><i></i></span>
+      </div>
+      <p id="live" class="live"></p>
+    </section>
+
+    <aside class="verlauf">
+      <h2>Verlauf</h2>
+      <ol id="beitraege"></ol>
+    </aside>
+  </main>
+
+  <footer class="fuss">
+    <button id="weiter" class="gross" type="button">Mikrofon weitergeben <kbd>Leertaste</kbd></button>
+    <button id="pause" class="klein" type="button">Beitrag beenden <kbd>Esc</kbd></button>
+    <span id="datei" class="datei"></span>
+    <span id="status" class="status"></span>
+  </footer>
+
+  <script type="module" src="kreis.js"></script>
+</body>
+</html>

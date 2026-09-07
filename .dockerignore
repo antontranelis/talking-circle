@@ -1,0 +1,7 @@
+node_modules
+transcripts
+test
+.git
+.github
+*.md
+!README.md

@@ -1,0 +1,15 @@
+services:
+  redekreis:
+    image: ghcr.io/antontranelis/talking-circle:latest
+    # Zum Selberbauen stattdessen: build: .
+    ports:
+      - "8123:8123"
+    volumes:
+      - modelle:/models          # das Sprachmodell, einmal geladen
+      - ./transcripts:/app/transcripts  # die Protokolle, hier auf der Platte
+    environment:
+      MODELL_QUANT: Q8_0        # Q6_K oder Q4_K_M sind kleiner und etwas ungenauer
+    restart: unless-stopped
+
+volumes:
+  modelle:
