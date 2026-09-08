@@ -127,6 +127,24 @@ Startseite. `1,0 s` liefert exakt den Text der Offline-Erkennung, `sofort`
 schreibt schneller mit, korrigiert sich dafür öfter. Für einen Redekreis, in
 dem gelesen statt reagiert wird, ist die genaueste Stufe meist die richtige.
 
+## Mehrere Geräte
+
+Alle geöffneten Geräte sehen dieselbe Runde live: Sprecher, laufenden Text und
+Verlauf. Weiterreichen und Korrigieren kann jedes davon.
+
+**Den Ton liefert genau ein Gerät.** Wer aufnimmt, steht oben rechts; alle
+anderen sehen dort *„ein anderes Gerät nimmt auf"* und daneben **Aufnahme
+hierher holen** — damit wandert das Mikrofon auf das eigene Gerät, und das
+bisherige hört auf zu senden. Das erste Gerät, das die Seite öffnet, übernimmt
+von selbst. Zuschauer öffnen ihr Mikrofon gar nicht erst.
+
+Das ist keine Bequemlichkeit, sondern Bedingung: Vorher schickte jedes offene
+Gerät seinen eigenen Ton in denselben Erkennungsstrom. Zwei Geräte bedeuteten
+gemessen **vierfache Rechenlast** und zerhackten Text bis hin zu gar keinem.
+
+Damit muss das Mikrofon auch nicht mehr physisch herumgehen: Wer dran ist, holt
+die Aufnahme auf sein eigenes Telefon.
+
 ## Zweiter Bildschirm
 
 Der Server hört auf allen Schnittstellen (`HOST`, `PORT` setzbar). Weitere
