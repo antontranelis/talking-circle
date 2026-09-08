@@ -125,6 +125,22 @@ Die Uhrzeiten im Download stehen in der Zeitzone des Geräts, das ihn holt — d
 Browser schickt sie mit. Für die Datei, die nebenher auf die Platte geschrieben
 wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
+## Ins Session-Archiv
+
+Neben `.md` und `.json` schreibt jede Runde eine `.jsonl` im Format des
+[Session-Archivs](https://github.com/antontranelis/session-archive): eine Runde
+wird zu einer Sitzung, **jeder Sprecher zu einer Rolle**, die erste Zeile trägt
+den Titel. Damit landet ein Redekreis in Volltextsuche, Zusammenfassung und
+Wissensgraph neben den Claude- und Codex-Sessions — ohne Änderung am Archiv.
+
+```bash
+./scripts/ins-archiv.sh                      # ./transcripts → Archiv auf Elis Server
+./scripts/ins-archiv.sh /pfad/zu/transcripts eli@host:/pfad/
+```
+
+Damit das Archiv die Runden auch anzeigt, braucht es dort einen eigenen Nutzer,
+etwa `redekreis:/app/archive/redekreis` in dessen `USERS`.
+
 ## Verzögerung
 
 Nemotron ist auf vier Latenzstufen trainiert; die Auswahl steht auf der

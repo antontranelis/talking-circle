@@ -307,6 +307,7 @@ export class Circle {
       : null;
     fs.writeFileSync(this.#pfad(".json"), JSON.stringify({ ...rest, laufend }, null, 2));
     fs.writeFileSync(this.#pfad(".md"), this.markdown());
+    fs.writeFileSync(this.#pfad(".jsonl"), this.jsonl());
   }
 
   // Die Zeitzone kommt von dem, der das Protokoll abruft — der Server selbst
@@ -331,8 +332,35 @@ export class Circle {
     return [...kopf, ...koerper].join("\n");
   }
 
+  // Dieselbe Runde in dem Zeilenformat, das das Session-Archiv einliest. Der
+  // Sprecher wird zur Rolle, die erste Zeile liefert den Titel.
+  jsonl() {
+    const s = this.state;
+    const zeile = (rolle, text, zeitpunkt) =>
+      JSON.stringify({
+        type: "user",
+        message: { role: rolle, content: text },
+        timestamp: zeitpunkt,
+        quelle: "redekreis",
+      });
+
+    const beitraege = [...s.beitraege];
+    if (s.aktiv?.committed) {
+      beitraege.push({ sprecher: s.aktiv.sprecher, begonnen: s.aktiv.begonnen, text: s.aktiv.committed.trim() });
+    }
+    const wer = [...new Set(beitraege.map((b) => b.sprecher))];
+    const kopf =
+      `Redekreis: ${s.titel} · ${beitraege.length} Beiträge` +
+      (wer.length ? ` · mit ${wer.join(", ")}` : "");
+
+    return [
+      zeile("user", kopf, s.begonnen),
+      ...beitraege.map((b) => zeile(b.sprecher, b.text, b.begonnen)),
+    ].join("\n") + "\n";
+  }
+
   pfade() {
-    return { json: this.#pfad(".json"), md: this.#pfad(".md") };
+    return { json: this.#pfad(".json"), md: this.#pfad(".md"), jsonl: this.#pfad(".jsonl") };
   }
 
   #pfad(ext) {
