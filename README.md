@@ -125,6 +125,16 @@ Die Uhrzeiten im Download stehen in der Zeitzone des Geräts, das ihn holt — d
 Browser schickt sie mit. Für die Datei, die nebenher auf die Platte geschrieben
 wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
+## Archiv in der App
+
+**Archiv** oben rechts zeigt alle bisherigen Runden: links die Liste mit Datum,
+Anzahl der Beiträge und den Namen, rechts die gewählte Runde zum Nachlesen.
+**Als Markdown laden** holt sie einzeln herunter — in der Zeitzone des Geräts,
+das sie abruft.
+
+Gelesen wird direkt aus `transcripts/`. Eine Runde, die noch läuft, ist mit
+dabei; der laufende Beitrag ist als *spricht noch* gekennzeichnet.
+
 ## Ins Session-Archiv
 
 Neben `.md` und `.json` schreibt jede Runde eine `.jsonl` im Format des

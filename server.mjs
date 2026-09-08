@@ -4,7 +4,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { Circle } from "./circle.mjs";
+import { Circle, alsMarkdown, gespeicherteRunden, ladeRunde } from "./circle.mjs";
 
 const PORT = Number(process.env.PORT ?? 8123);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -52,6 +52,29 @@ const server = http.createServer((req, res) => {
     // Der Browser sagt, in welcher Zeitzone er sitzt.
     return res.end(circle.markdown(url.searchParams.get("tz") ?? undefined));
   }
+  // Das Archiv: alle bisherigen Runden ansehen und herunterladen.
+  if (url.pathname === "/api/runden") {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    return res.end(JSON.stringify(gespeicherteRunden()));
+  }
+  const einzeln = url.pathname.match(/^\/runde\/([^/]+)\.(md|json)$/);
+  if (einzeln) {
+    const runde = ladeRunde(decodeURIComponent(einzeln[1]));
+    if (!runde) {
+      res.writeHead(404);
+      return res.end("Runde nicht gefunden");
+    }
+    if (einzeln[2] === "json") {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      return res.end(JSON.stringify(runde));
+    }
+    res.writeHead(200, {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${runde.id}.md"`,
+    });
+    return res.end(alsMarkdown(runde, url.searchParams.get("tz") ?? undefined));
+  }
+
   const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const datei = path.join(PUBLIC, rel);
   if (!datei.startsWith(PUBLIC) || !fs.existsSync(datei)) {

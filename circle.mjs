@@ -38,6 +38,68 @@ function pegel(pcm) {
 
 const neueKennung = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
+// Eine Runde als Markdown — für die laufende ebenso wie für eine gespeicherte.
+export function alsMarkdown(runde, zeitzone) {
+  const zone = gueltigeZone(zeitzone) ? { timeZone: zeitzone } : {};
+  const zeit = (iso) =>
+    new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", ...zone });
+  const beitraege = [...(runde.beitraege ?? [])];
+  const laufend = runde.aktiv?.committed
+    ? { sprecher: runde.aktiv.sprecher, begonnen: runde.aktiv.begonnen, text: runde.aktiv.committed.trim() }
+    : runde.laufend;
+  const kopf = [
+    `# ${runde.titel}`,
+    "",
+    `${new Date(runde.begonnen).toLocaleString("de-DE", zone)} · ${beitraege.length + (laufend ? 1 : 0)} Beiträge`,
+    "",
+  ];
+  const koerper = beitraege.map((b) => `## ${b.sprecher} · ${zeit(b.begonnen)}\n\n${b.text}\n`);
+  // Wer gerade spricht, steht mit dabei — ein Export mittendrin verliert nichts.
+  if (laufend) {
+    koerper.push(`## ${laufend.sprecher} · ${zeit(laufend.begonnen)} · spricht noch\n\n${laufend.text}\n`);
+  }
+  return [...kopf, ...koerper].join("\n");
+}
+
+// Alle gespeicherten Runden, jüngste zuerst.
+export function gespeicherteRunden() {
+  if (!fs.existsSync(TRANSCRIPTS)) return [];
+  return fs
+    .readdirSync(TRANSCRIPTS)
+    .filter((d) => d.endsWith(".json"))
+    .map((d) => {
+      try {
+        const runde = JSON.parse(fs.readFileSync(path.join(TRANSCRIPTS, d), "utf8"));
+        const beitraege = runde.beitraege ?? [];
+        return {
+          id: runde.id ?? d.replace(/\.json$/, ""),
+          titel: runde.titel ?? "Redekreis",
+          begonnen: runde.begonnen,
+          anzahl: beitraege.length + (runde.laufend ? 1 : 0),
+          sprecher: [...new Set(beitraege.map((b) => b.sprecher))],
+          zeichen: beitraege.reduce((n, b) => n + b.text.length, 0),
+        };
+      } catch {
+        return null; // eine kaputte Datei soll das Archiv nicht sprengen
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a.begonnen < b.begonnen ? 1 : -1));
+}
+
+// Eine gespeicherte Runde laden. Die Kennung wird streng geprüft, damit über
+// den Namen kein anderer Pfad erreichbar ist.
+export function ladeRunde(id) {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(id ?? "")) return null;
+  const datei = path.join(TRANSCRIPTS, `${id}.json`);
+  if (!fs.existsSync(datei)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(datei, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 export class Circle {
   #model = null;
   #session = null;
@@ -313,23 +375,7 @@ export class Circle {
   // Die Zeitzone kommt von dem, der das Protokoll abruft — der Server selbst
   // läuft im Container auf UTC, und die Uhrzeit soll zur Runde passen.
   markdown(zeitzone = standardZone()) {
-    const s = this.state;
-    const zone = gueltigeZone(zeitzone) ? { timeZone: zeitzone } : {};
-    const zeit = (iso) =>
-      new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", ...zone });
-    const anzahl = s.beitraege.length + (s.aktiv?.committed ? 1 : 0);
-    const kopf = [
-      `# ${s.titel}`,
-      "",
-      `${new Date(s.begonnen).toLocaleString("de-DE", zone)} · ${anzahl} Beiträge`,
-      "",
-    ];
-    const koerper = s.beitraege.map((b) => `## ${b.sprecher} · ${zeit(b.begonnen)}\n\n${b.text}\n`);
-    // Wer gerade spricht, steht mit dabei — ein Export mittendrin verliert nichts.
-    if (s.aktiv?.committed) {
-      koerper.push(`## ${s.aktiv.sprecher} · ${zeit(s.aktiv.begonnen)} · spricht noch\n\n${s.aktiv.committed.trim()}\n`);
-    }
-    return [...kopf, ...koerper].join("\n");
+    return alsMarkdown(this.state, zeitzone);
   }
 
   // Dieselbe Runde in dem Zeilenformat, das das Session-Archiv einliest. Der

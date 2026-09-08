@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2712%27 fill=%27none%27 stroke=%27%23e5a05c%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%274%27 r=%274%27 fill=%27%23e5a05c%27/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+  <title>Redekreis · Archiv</title>
+</head>
+<body class="seite-archiv">
+  <header class="kopf">
+    <div class="kopf-links">
+      <h1>Archiv</h1>
+      <span id="anzahl" class="modell"></span>
+    </div>
+    <div class="kopf-rechts">
+      <a class="klein" href="/">Zurück zum Kreis</a>
+    </div>
+  </header>
+
+  <main class="tafel">
+    <section class="verlauf">
+      <h2>Runden</h2>
+      <ol id="runden"></ol>
+    </section>
+    <section class="buehne lesen">
+      <div class="buehne-kopf">
+        <span id="gelesen-titel" class="sprecher still">Keine Runde gewählt</span>
+        <span id="gelesen-zeit" class="uhr"></span>
+        <a id="laden" class="klein" href="#" hidden>Als Markdown laden</a>
+      </div>
+      <div id="gelesen" class="gelesen"></div>
+    </section>
+  </main>
+
+  <script type="module" src="archiv.js"></script>
+</body>
+</html>

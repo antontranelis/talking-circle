@@ -500,3 +500,65 @@ test("Jede Runde liegt auch im Zeilenformat des Session-Archivs vor", async (t) 
   }
   ws.close();
 });
+
+test("Das Archiv listet frühere Runden und gibt sie einzeln heraus", async (t) => {
+  const port = PORT + 8;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const zustaende = [];
+  ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
+  await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" }));
+  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Timo"], titel: "Archivrunde" }));
+  ws.send(JSON.stringify({ typ: "start", sprecher: "Timo" }));
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const teil = pcm.subarray(0, 16000 * 5);
+  for (let i = 0; i < teil.length; i += 2048) {
+    const block = teil.subarray(i, Math.min(i + 2048, teil.length));
+    ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    await new Promise((ok) => setTimeout(ok, 5));
+  }
+  ws.send(JSON.stringify({ typ: "stop" }));
+  const frist = Date.now() + 25_000;
+  while (Date.now() < frist) {
+    if (zustaende.filter((m) => m.typ === "state").at(-1)?.state.beitraege.length) break;
+    await new Promise((ok) => setTimeout(ok, 50));
+  }
+  const id = zustaende.filter((m) => m.typ === "state").at(-1).state.id;
+
+  const liste = await fetch(`http://127.0.0.1:${port}/api/runden`).then((r) => r.json());
+  const meine = liste.find((r) => r.id === id);
+  assert.ok(meine, "die Runde fehlt im Archiv");
+  assert.equal(meine.titel, "Archivrunde");
+  assert.deepEqual(meine.sprecher, ["Timo"]);
+  assert.equal(meine.anzahl, 1);
+  assert.ok(liste.every((r, i) => i === 0 || liste[i - 1].begonnen >= r.begonnen), "nicht jüngste zuerst");
+
+  const einzeln = await fetch(`http://127.0.0.1:${port}/runde/${id}.json`).then((r) => r.json());
+  assert.match(einzeln.beitraege[0].text, /Badeanzug/i);
+
+  const md = await fetch(`http://127.0.0.1:${port}/runde/${id}.md?tz=Asia/Tokyo`);
+  assert.equal(md.headers.get("content-disposition"), `attachment; filename="${id}.md"`);
+  const text = await md.text();
+  assert.match(text, /^# Archivrunde/);
+  assert.match(text, /## Timo · \d{2}:\d{2}/);
+
+  // Über die Kennung darf kein anderer Pfad erreichbar sein.
+  for (const boese of ["..%2F..%2Fpackage", "nicht-vorhanden", "2026-01-01T00-00-00"]) {
+    const r = await fetch(`http://127.0.0.1:${port}/runde/${boese}.json`);
+    assert.equal(r.status, 404, `${boese} haette nicht ausgeliefert werden duerfen`);
+  }
+  ws.close();
+});
