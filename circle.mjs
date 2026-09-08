@@ -104,6 +104,7 @@ export class Circle {
       // Der Beitrag wurde beendet, bevor die Session stand.
       this.#vorrat = null;
       await stream.finalize().catch(() => {});
+      stream.reset(); // gibt die Sitzung frei — sonst bleibt sie im Streaming-Zustand
       return;
     }
     this.#stream = stream;
@@ -164,6 +165,9 @@ export class Circle {
       } catch (err) {
         console.error("Finalisieren fehlgeschlagen:", err.message);
       }
+      // Ohne reset() bleibt die Sitzung nach jedem Beitrag im Streaming-Zustand;
+      // über eine lange Runde summiert sich das.
+      stream.reset();
     }
     const beitrag = {
       sprecher: aktiv.sprecher,
