@@ -216,3 +216,111 @@ test("Ein Export mitten im Beitrag enthält, was gerade gesagt wurde", async (t)
   assert.ok(aufPlatte.includes(gesagt), "der laufende Beitrag steht nicht auf der Platte");
   ws.close();
 });
+
+test("Eine Runde über viele Übergaben hinweg bleibt sprechfähig", async (t) => {
+  // Der Fehler, den das hier abfängt: ohne stream.reset() nimmt die Sitzung
+  // nach wenigen Beiträgen keinen neuen mehr an — stumm, ohne Fehlermeldung.
+  const port = PORT + 3;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const zustaende = [];
+  ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
+  await new Promise((ok) => ws.on("open", ok));
+
+  const namen = ["Anton", "Eva", "Emil", "Agnes", "Timo", "Holger", "Jonathan", "Janosch"];
+  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: namen, titel: "Lange Runde" }));
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const stueck = pcm.subarray(0, 16000 * 5); // fünf Sekunden je Beitrag
+
+  const UEBERGABEN = 8;
+  for (let n = 0; n < UEBERGABEN; n++) {
+    ws.send(JSON.stringify({ typ: "start", sprecher: namen[n % namen.length] }));
+    for (let i = 0; i < stueck.length; i += 2048) {
+      const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
+      ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+      await new Promise((ok) => setTimeout(ok, 4));
+    }
+    ws.send(JSON.stringify({ typ: "stop" }));
+    const frist = Date.now() + 25_000;
+    while (Date.now() < frist) {
+      const s = zustaende.filter((m) => m.typ === "state").at(-1)?.state;
+      if (s && s.beitraege.length === n + 1) break;
+      await new Promise((ok) => setTimeout(ok, 50));
+    }
+  }
+
+  const beitraege = zustaende.filter((m) => m.typ === "state").at(-1).state.beitraege;
+  assert.equal(beitraege.length, UEBERGABEN, "nicht jede Übergabe hat einen Beitrag ergeben");
+  const stumm = beitraege.map((b, i) => [i + 1, b.text]).filter(([, t]) => !/Badeanzug/i.test(t));
+  assert.deepEqual(stumm, [], `diese Beiträge blieben ohne Text: ${JSON.stringify(stumm)}`);
+  ws.close();
+});
+
+test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) => {
+  const port = PORT + 4;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const zustaende = [];
+  ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
+  await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Wachhund" }));
+  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+
+  // Rauschen: hat Pegel, ist aber keine Sprache — das Modell liefert nichts.
+  // Der Wachhund muss das als hängenden Strom erkennen. In Echtzeit gefüttert,
+  // weil seine Frist an der Uhr hängt.
+  const rauschen = new Float32Array(2048);
+  const bisNeuaufsetzer = Date.now() + 30_000;
+  let neuaufsetzer = 0;
+  while (Date.now() < bisNeuaufsetzer && neuaufsetzer === 0) {
+    for (let i = 0; i < rauschen.length; i++) rauschen[i] = (Math.random() - 0.5) * 0.2;
+    ws.send(Buffer.from(rauschen.buffer, rauschen.byteOffset, rauschen.byteLength));
+    await new Promise((ok) => setTimeout(ok, 128));
+    neuaufsetzer = zustaende.filter((m) => m.typ === "state").at(-1)?.state.neuaufsetzer ?? 0;
+  }
+  assert.ok(neuaufsetzer >= 1, "der Wachhund hat nicht angeschlagen");
+
+  // Nach dem Neuaufsetzen muss echte Sprache wieder ankommen.
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const stueck = pcm.subarray(0, 16000 * 8);
+  for (let i = 0; i < stueck.length; i += 2048) {
+    const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
+    ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    await new Promise((ok) => setTimeout(ok, 6));
+  }
+  ws.send(JSON.stringify({ typ: "stop" }));
+
+  const frist = Date.now() + 30_000;
+  let beitraege = [];
+  while (Date.now() < frist) {
+    beitraege = zustaende.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
+    if (beitraege.length) break;
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  assert.equal(beitraege.length, 1);
+  assert.match(beitraege[0].text, /Badeanzug/i, "nach dem Neuaufsetzen kam kein Text mehr");
+  ws.close();
+});

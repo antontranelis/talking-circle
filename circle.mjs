@@ -10,9 +10,18 @@ import { resolveModel } from "./model.mjs";
 const TRANSCRIPTS = path.join(import.meta.dirname, "transcripts");
 const VORRAT_MAX = 250; // ~30 s bei 128-ms-Blöcken
 const SICHERN_MS = 3000; // Schreibabstand für den laufenden Beitrag
+const STUMM_MS = 8000; // so lange darf gesprochen werden, ohne dass Text kommt
+const PEGEL_SCHWELLE = 0.012; // darüber gilt ein Block als Sprache
 const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang fehlt
 
 const dateiName = (id) => `transcripts/${id}.md`;
+// Lautstärke eines Blocks als quadratisches Mittel.
+function pegel(pcm) {
+  let summe = 0;
+  for (let i = 0; i < pcm.length; i++) summe += pcm[i] * pcm[i];
+  return Math.sqrt(summe / pcm.length);
+}
+
 const neueKennung = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
 export class Circle {
@@ -22,6 +31,8 @@ export class Circle {
   #vorrat = null; // Ton, der eintrifft, während die Session noch aufgebaut wird
   #vorlauf = []; // die letzten Momente vor dem Beginn eines Beitrags
   #zuletztGesichert = 0; // Zeitpunkt der letzten Sicherung des laufenden Beitrags
+  #letzterText = 0; // wann zuletzt Text kam
+  #letzteSprache = 0; // wann zuletzt jemand hörbar gesprochen hat
   #takt = null; // schreibt den laufenden Beitrag auch dann fort, wenn gerade nichts kommt
   #queue = Promise.resolve();   // Feeds laufen streng nacheinander
   #wechsel = Promise.resolve();  // Beitragswechsel ebenso
@@ -89,8 +100,10 @@ export class Circle {
       begonnen: new Date().toISOString(),
       committed: "",
       tentative: "",
+      vorher: "", // Text aus einem vorherigen Strom desselben Beitrags
     };
     this.state.aktiv = aktiv;
+    this.#letzterText = Date.now();
     this.#vorrat = this.#vorlauf.splice(0);
     this.#onChange("state");
 
@@ -116,6 +129,7 @@ export class Circle {
   // PCM: Float32Array, 16 kHz mono. Feeds laufen streng nacheinander, weil
   // die Streaming-Session nicht nebenläufig gefüttert werden darf.
   fuettern(pcm) {
+    if (pegel(pcm) > PEGEL_SCHWELLE) this.#letzteSprache = Date.now();
     if (!this.state.aktiv) {
       // Zwischen zwei Beiträgen: die letzten Momente mitlaufen lassen. Wer
       // schon spricht, bevor die Übergabe bestätigt ist, geht so nicht verloren.
@@ -136,9 +150,14 @@ export class Circle {
       .then(async () => {
         await stream.feed(pcm);
         const { committed, tentative } = stream.text;
-        if (aktiv.committed === committed && aktiv.tentative === tentative) return;
-        aktiv.committed = committed;
+        const ganz = aktiv.vorher ? `${aktiv.vorher} ${committed}`.trim() : committed;
+        if (aktiv.committed === ganz && aktiv.tentative === tentative) {
+          await this.#wachhund(aktiv, stream);
+          return;
+        }
+        aktiv.committed = ganz;
         aktiv.tentative = tentative;
+        this.#letzterText = Date.now();
         this.sichernGedrosselt();
         if (this.state.aktiv === aktiv) this.#onChange("live");
       })
@@ -146,6 +165,37 @@ export class Circle {
         console.error("Feed fehlgeschlagen:", err.message);
       });
     return this.#queue;
+  }
+
+  // Es wird gesprochen, aber es kommt kein Text: dann ist der Erkennungsstrom
+  // hängen geblieben. Neu aufsetzen und weitermachen, statt still zu bleiben.
+  async #wachhund(aktiv, stream) {
+    const jetzt = Date.now();
+    if (this.#stream !== stream || this.state.aktiv !== aktiv) return;
+    if (jetzt - this.#letzteSprache > 1500) return; // gerade spricht niemand
+    if (jetzt - this.#letzterText < STUMM_MS) return;
+
+    console.error(`Erkennung stumm seit ${STUMM_MS / 1000} s — Strom wird neu aufgesetzt`);
+    this.#letzterText = jetzt;
+    this.#stream = null;
+    try {
+      await stream.finalize();
+      const rest = stream.text.committed;
+      if (rest) aktiv.vorher = aktiv.vorher ? `${aktiv.vorher} ${rest}`.trim() : rest;
+    } catch (err) {
+      console.error("Finalisieren beim Neuaufsetzen fehlgeschlagen:", err.message);
+    }
+    try {
+      stream.reset();
+    } catch {}
+    if (this.state.aktiv !== aktiv) return;
+    this.#stream = await this.#session.stream({
+      language: this.state.sprache,
+      commitPolicy: "stable_prefix",
+      family: { kind: "parakeet", attContextRight: this.state.attContextRight },
+    });
+    this.state.neuaufsetzer = (this.state.neuaufsetzer ?? 0) + 1;
+    this.#onChange("state");
   }
 
   async #beenden() {
@@ -161,7 +211,8 @@ export class Circle {
     if (stream) {
       try {
         await stream.finalize();
-        text = stream.text.committed || stream.text.full || text;
+        const ende = stream.text.committed || stream.text.full || "";
+        text = aktiv.vorher ? `${aktiv.vorher} ${ende}`.trim() : ende || text;
       } catch (err) {
         console.error("Finalisieren fehlgeschlagen:", err.message);
       }
