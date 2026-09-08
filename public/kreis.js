@@ -4,6 +4,7 @@ import { verbinden, sende, sendeTon, offen } from "./verbindung.js";
 const $ = (id) => document.getElementById(id);
 let state = null;
 let audio = null;
+let meineKennung = null;
 let dranIndex = -1;
 let uhrTimer = null;
 let gongGespielt = false; // je Beitrag höchstens ein Gong
@@ -211,6 +212,7 @@ function melden(text, fehler = false) {
 
 // --- Bedienung -----------------------------------------------------------
 
+$("aufnahme").onclick = aufnahmeUebernehmen;
 $("weiter").onclick = weitergeben;
 $("pause").onclick = beenden;
 $("export").onclick = () => window.open("/export.md", "_blank");
@@ -242,8 +244,40 @@ document.addEventListener("keydown", (ev) => {
   }
 });
 
+const ichNehmeAuf = () => state?.aufnahmeVon !== null && state?.aufnahmeVon === meineKennung;
+
+// Nur ein Gerät liefert den Ton. Wer zusieht, lässt sein Mikrofon zu — sonst
+// mischen sich mehrere Aufnahmen in denselben Erkennungsstrom.
+async function aufnahmeUebernehmen() {
+  sende({ typ: "aufnehmen" });
+  if (audio) return;
+  try {
+    await mikroOeffnen();
+    melden("");
+  } catch (err) {
+    melden(`Kein Zugriff aufs Mikrofon: ${err.message}`, true);
+  }
+}
+
+function zeichneAufnahme() {
+  const knopf = $("aufnahme");
+  if (ichNehmeAuf()) {
+    knopf.hidden = true;
+    $("aufnahme-hinweis").textContent = "dieses Gerät nimmt auf";
+    return;
+  }
+  knopf.hidden = false;
+  knopf.textContent = state.aufnahmeVon === null ? "Hier aufnehmen" : "Aufnahme hierher holen";
+  $("aufnahme-hinweis").textContent =
+    state.aufnahmeVon === null ? "kein Gerät nimmt auf" : "ein anderes Gerät nimmt auf";
+}
+
 verbinden(async (m) => {
   if (m.typ === "fehler") return melden(m.text, true);
+  if (m.typ === "du") {
+    meineKennung = m.kennung;
+    return;
+  }
   if (m.typ === "live" && state) {
     state.aktiv = m.aktiv;
     return zeichneLive();
@@ -255,12 +289,7 @@ verbinden(async (m) => {
   // Ohne Kreis gibt es nichts anzuzeigen — dann zuerst einrichten.
   if (ersteAntwort && !state.teilnehmende.length) return location.replace("/einrichtung.html");
   zeichnen();
-  if (ersteAntwort) {
-    try {
-      await mikroOeffnen();
-      melden("");
-    } catch (err) {
-      melden(`Kein Zugriff aufs Mikrofon: ${err.message} — bitte in der Einrichtung freigeben.`, true);
-    }
-  }
+  zeichneAufnahme();
+  // Nimmt noch niemand auf, übernimmt das erste Gerät die Aufnahme.
+  if (ersteAntwort && state.aufnahmeVon === null) await aufnahmeUebernehmen();
 });

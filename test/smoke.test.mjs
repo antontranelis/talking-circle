@@ -54,6 +54,7 @@ test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) 
   const zustaende = [];
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
   ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton", "Eva"], sprache: "de-DE", titel: "Testrunde" }));
 
@@ -126,6 +127,7 @@ test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", asy
   const zustaende = [];
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
   const letzterZustand = () => zustaende.filter((m) => m.typ === "state").at(-1)?.state;
   const warten = async (pruefen) => {
@@ -176,6 +178,7 @@ test("Ein Export mitten im Beitrag enthält, was gerade gesagt wurde", async (t)
   const zustaende = [];
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
   ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Mittendrin" }));
   ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
@@ -237,6 +240,7 @@ test("Eine Runde über viele Übergaben hinweg bleibt sprechfähig", async (t) =
   const zustaende = [];
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
   const namen = ["Anton", "Eva", "Emil", "Agnes", "Timo", "Holger", "Jonathan", "Janosch"];
   ws.send(JSON.stringify({ typ: "setzen", teilnehmende: namen, titel: "Lange Runde" }));
@@ -286,6 +290,7 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   const zustaende = [];
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
   ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Wachhund" }));
   ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
 
@@ -323,4 +328,64 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   assert.equal(beitraege.length, 1);
   assert.match(beitraege[0].text, /Badeanzug/i, "nach dem Neuaufsetzen kam kein Text mehr");
   ws.close();
+});
+
+test("Nur das aufnehmende Gerät liefert Ton, Zuschauer stören nicht", async (t) => {
+  // Vorher kippten alle verbundenen Browser ihr Mikrofon in denselben
+  // Erkennungsstrom: doppelte Rechenlast und zerhackter Text.
+  const port = PORT + 5;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+
+  const verbinde = async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    const nachrichten = [];
+    ws.on("message", (roh) => nachrichten.push(JSON.parse(roh.toString())));
+    await new Promise((ok) => ws.on("open", ok));
+    return { ws, nachrichten };
+  };
+
+  const aufnehmer = await verbinde();
+  const zuschauer = await verbinde();
+  aufnehmer.ws.send(JSON.stringify({ typ: "aufnehmen" }));
+  aufnehmer.ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Zwei Geräte" }));
+  aufnehmer.ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const rauschen = new Float32Array(2048);
+  for (let i = 0; i < pcm.length; i += 2048) {
+    const block = pcm.subarray(i, Math.min(i + 2048, pcm.length));
+    aufnehmer.ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    // Der Zuschauer hat sein Mikrofon offen und schickt munter mit.
+    for (let k = 0; k < rauschen.length; k++) rauschen[k] = (Math.random() - 0.5) * 0.4;
+    zuschauer.ws.send(Buffer.from(rauschen.buffer, rauschen.byteOffset, rauschen.byteLength));
+    await new Promise((ok) => setTimeout(ok, 5));
+  }
+  aufnehmer.ws.send(JSON.stringify({ typ: "stop" }));
+
+  const frist = Date.now() + 30_000;
+  let beitraege = [];
+  while (Date.now() < frist) {
+    beitraege = aufnehmer.nachrichten.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
+    if (beitraege.length) break;
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+  assert.equal(beitraege.length, 1);
+  assert.match(beitraege[0].text, /^Am Strand der Badeanzug/i, "der Zuschauer hat die Aufnahme verdorben");
+  assert.match(beitraege[0].text, /Wellen\.?$/i, "der Zuschauer hat die Aufnahme verdorben");
+
+  // Und der Zuschauer sieht trotzdem alles mit.
+  const beimZuschauer = zuschauer.nachrichten.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
+  assert.equal(beimZuschauer.length, 1, "der Zuschauer sieht die Runde nicht");
+  aufnehmer.ws.close();
+  zuschauer.ws.close();
 });

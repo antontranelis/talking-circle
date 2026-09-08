@@ -113,7 +113,9 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .was:focus { box-shadow: 0 0 0 2px var(--akzent-weich); }
 
 .fuss { display: flex; align-items: center; gap: 1rem; }
-.datei { color: var(--gedimmt); font-size: 0.75rem; margin-left: auto; }
+.datei { color: var(--gedimmt); font-size: 0.75rem; }
+#aufnahme-hinweis { margin-left: auto; }
+.ohne-text #aufnahme-hinweis { margin-left: auto; }
 
 /* --- Ablenkungsfrei: nur, wer dran ist --- */
 .ohne-text .live,

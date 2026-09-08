@@ -18,11 +18,20 @@ const TYPEN = {
 };
 
 const clients = new Set();
+// Genau ein Gerät liefert den Ton. Alle anderen sehen zu — sonst mischen sich
+// mehrere Mikrofone in denselben Erkennungsstrom und das Ergebnis ist Kauderwelsch.
+let aufnahmeClient = null;
+let naechsteKennung = 0;
+
+const zustandMitAufnahme = () => ({
+  ...circle.state,
+  aufnahmeVon: aufnahmeClient?.kennung ?? null,
+});
 
 const circle = new Circle({
   onChange: (art) => {
     if (art === "live") sendeAllen({ typ: "live", aktiv: circle.state.aktiv });
-    else sendeAllen({ typ: "state", state: circle.state });
+    else sendeAllen({ typ: "state", state: zustandMitAufnahme() });
   },
 });
 
@@ -55,12 +64,15 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
+  ws.kennung = ++naechsteKennung;
   clients.add(ws);
-  ws.send(JSON.stringify({ typ: "state", state: circle.state }));
+  ws.send(JSON.stringify({ typ: "du", kennung: ws.kennung }));
+  ws.send(JSON.stringify({ typ: "state", state: zustandMitAufnahme() }));
 
   ws.on("message", async (daten, istBinaer) => {
     if (istBinaer) {
-      // Rohton: Float32, 16 kHz, mono
+      // Ton nur vom aufnehmenden Gerät; alles andere wird verworfen.
+      if (ws !== aufnahmeClient) return;
       const kopie = new Float32Array(daten.buffer.slice(daten.byteOffset, daten.byteOffset + daten.byteLength));
       circle.fuettern(kopie);
       return;
@@ -73,6 +85,10 @@ wss.on("connection", (ws) => {
     }
     try {
       switch (m.typ) {
+        case "aufnehmen":
+          aufnahmeClient = ws;
+          sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+          break;
         case "start":
           await circle.beitragStarten(m.sprecher ?? "Unbekannt");
           break;
@@ -98,7 +114,13 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => clients.delete(ws));
+  ws.on("close", () => {
+    clients.delete(ws);
+    if (aufnahmeClient === ws) {
+      aufnahmeClient = null;
+      sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+    }
+  });
 });
 
 server.listen(PORT, HOST, async () => {
