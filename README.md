@@ -127,7 +127,8 @@ wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
 ## Archiv in der App
 
-**Archiv** oben rechts zeigt alle bisherigen Runden: links die Liste mit Datum,
+**Archiv** oben rechts — und **Frühere Runden** auf der Einrichtungsseite, damit
+man auch ohne laufenden Kreis hinkommt — zeigt alle bisherigen Runden: links die Liste mit Datum,
 Anzahl der Beiträge und den Namen, rechts die gewählte Runde zum Nachlesen.
 **Als Markdown laden** holt sie einzeln herunter — in der Zeitzone des Geräts,
 das sie abruft.
