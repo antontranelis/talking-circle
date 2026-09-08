@@ -10,6 +10,8 @@ services:
     container_name: talking-circle
     network_mode: bridge
     restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin   # gilt für die Datei auf der Platte
     volumes:
       - modelle:/models
       - ./transcripts:/app/transcripts

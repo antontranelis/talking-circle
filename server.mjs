@@ -49,7 +49,8 @@ const server = http.createServer((req, res) => {
       "content-type": "text/markdown; charset=utf-8",
       "content-disposition": `attachment; filename="${circle.state.id}.md"`,
     });
-    return res.end(circle.markdown());
+    // Der Browser sagt, in welcher Zeitzone er sitzt.
+    return res.end(circle.markdown(url.searchParams.get("tz") ?? undefined));
   }
   const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const datei = path.join(PUBLIC, rel);

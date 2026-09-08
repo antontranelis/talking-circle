@@ -48,6 +48,7 @@ Stellschrauben:
 |---|---|---|
 | `PORT` / `HOST` | `8123` / `0.0.0.0` | wo der Server hört |
 | `MODELL_QUANT` | `Q8_0` | `Q6_K` und `Q4_K_M` sind kleiner und etwas ungenauer |
+| `TZ` | UTC | Zeitzone der Uhrzeiten in der Datei auf der Platte |
 | `TALKING_CIRCLE_MODEL` | – | Pfad zu einer eigenen `.gguf`; überspringt das Laden |
 
 Das Abbild ist rund 320 MB groß, enthält kein Modell und läuft auf `amd64` und
@@ -119,6 +120,10 @@ auch wenn gerade niemand redet. Der Fußzeilen-Hinweis nennt die Datei.
 **Protokoll laden** holt den Stand jederzeit als Markdown, inklusive des
 Beitrags, der gerade läuft (im Export als *spricht noch* markiert). Ihr könnt
 also mitten im Kreis exportieren, ohne jemanden zu unterbrechen.
+
+Die Uhrzeiten im Download stehen in der Zeitzone des Geräts, das ihn holt — der
+Browser schickt sie mit. Für die Datei, die nebenher auf die Platte geschrieben
+wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
 ## Verzögerung
 

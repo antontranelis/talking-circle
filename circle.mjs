@@ -14,6 +14,20 @@ const STUMM_MS = 8000; // so lange darf gesprochen werden, ohne dass Text kommt
 const PEGEL_SCHWELLE = 0.012; // darüber gilt ein Block als Sprache
 const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang fehlt
 
+// Zeitzone für das, was auf die Platte geschrieben wird: TZ des Servers,
+// sonst die des Betriebssystems.
+const standardZone = () => process.env.TZ || undefined;
+
+function gueltigeZone(zone) {
+  if (!zone) return false;
+  try {
+    new Intl.DateTimeFormat("de-DE", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const dateiName = (id) => `transcripts/${id}.md`;
 // Lautstärke eines Blocks als quadratisches Mittel.
 function pegel(pcm) {
@@ -295,11 +309,20 @@ export class Circle {
     fs.writeFileSync(this.#pfad(".md"), this.markdown());
   }
 
-  markdown() {
+  // Die Zeitzone kommt von dem, der das Protokoll abruft — der Server selbst
+  // läuft im Container auf UTC, und die Uhrzeit soll zur Runde passen.
+  markdown(zeitzone = standardZone()) {
     const s = this.state;
-    const zeit = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const zone = gueltigeZone(zeitzone) ? { timeZone: zeitzone } : {};
+    const zeit = (iso) =>
+      new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", ...zone });
     const anzahl = s.beitraege.length + (s.aktiv?.committed ? 1 : 0);
-    const kopf = [`# ${s.titel}`, "", `${new Date(s.begonnen).toLocaleString("de-DE")} · ${anzahl} Beiträge`, ""];
+    const kopf = [
+      `# ${s.titel}`,
+      "",
+      `${new Date(s.begonnen).toLocaleString("de-DE", zone)} · ${anzahl} Beiträge`,
+      "",
+    ];
     const koerper = s.beitraege.map((b) => `## ${b.sprecher} · ${zeit(b.begonnen)}\n\n${b.text}\n`);
     // Wer gerade spricht, steht mit dabei — ein Export mittendrin verliert nichts.
     if (s.aktiv?.committed) {

@@ -8,6 +8,7 @@ services:
       - modelle:/models          # das Sprachmodell, einmal geladen
       - ./transcripts:/app/transcripts  # die Protokolle, hier auf der Platte
     environment:
+      TZ: Europe/Berlin   # gilt für die Datei auf der Platte
       MODELL_QUANT: Q8_0        # Q6_K oder Q4_K_M sind kleiner und etwas ungenauer
     restart: unless-stopped
 

@@ -215,7 +215,10 @@ function melden(text, fehler = false) {
 $("aufnahme").onclick = aufnahmeUebernehmen;
 $("weiter").onclick = weitergeben;
 $("pause").onclick = beenden;
-$("export").onclick = () => window.open("/export.md", "_blank");
+$("export").onclick = () => {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  window.open(`/export.md?tz=${encodeURIComponent(zone)}`, "_blank");
+};
 $("neu").onclick = () => {
   if (state.beitraege.length && !confirm(`${state.beitraege.length} Beiträge sind gesichert. Neue Runde beginnen?`)) return;
   dranIndex = -1;
