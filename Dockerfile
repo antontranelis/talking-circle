@@ -14,7 +14,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY server.mjs circle.mjs model.mjs ./
+# Alle Module, nicht einzeln aufgezählt — sonst fehlt beim nächsten neuen eines.
+COPY *.mjs ./
 COPY public ./public
 COPY docker-entrypoint.sh /usr/local/bin/
 

@@ -67,6 +67,25 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # Erst probeweise bauen und wirklich starten. Die Tests laufen gegen den
+      # Quellbaum — ob im Abbild alle Dateien liegen, zeigt nur ein Start.
+      - name: Abbild probeweise bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: talking-circle:probe
+          cache-from: type=gha
+      - name: Abbild startet
+        run: |
+          ausgabe=$(docker run --rm -e TALKING_CIRCLE_MODEL=/gibtesnicht.gguf talking-circle:probe 2>&1 || true)
+          echo "$ausgabe"
+          if ! grep -q "TALKING_CIRCLE_MODEL zeigt ins Leere" <<<"$ausgabe"; then
+            echo "::error::Das Abbild startet nicht sauber — vermutlich fehlt eine Datei im Dockerfile."
+            exit 1
+          fi
+
       - uses: docker/build-push-action@v6
         with:
           context: .
