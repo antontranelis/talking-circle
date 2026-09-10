@@ -166,14 +166,22 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 #editor:focus { outline: none; border-color: var(--akzent); }
 .werkstatt-fuss { display: flex; align-items: center; gap: 0.9rem; }
 
-.verlauf-blatt {
-  border-top: 1px solid var(--rand); padding-top: 1rem; margin-top: 0.4rem;
-  display: flex; flex-direction: column; gap: 0.8rem; max-height: 45%; overflow-y: auto;
+/* Der Verlauf bekommt die ganze Bühne, so wie der Editor auch. */
+.verlauf-blatt { display: flex; flex-direction: column; gap: 1rem; min-height: 0; flex: 1; }
+.verlauf-blatt ol {
+  list-style: none; margin: 0; padding: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0.2rem;
 }
-.verlauf-blatt ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.9rem; }
-.verlauf-blatt .eintrag-kopf { gap: 0.6rem; }
-.verlauf-blatt .wer { text-transform: capitalize; }
-.verlauf-blatt .weg, .verlauf-blatt button.klein { margin-left: auto; }
+.verlauf-blatt li {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.9rem 0; border-bottom: 1px solid var(--rand);
+}
+.verlauf-blatt li:last-child { border-bottom: none; }
+.verlauf-blatt .eintrag-kopf { gap: 0.7rem; align-items: baseline; }
+.verlauf-blatt .wer { text-transform: capitalize; font-size: 1rem; }
+.verlauf-blatt .was { font-size: 0.95rem; color: var(--gedimmt); }
+.verlauf-blatt button.klein { margin-left: auto; }
+.klein.an { color: var(--text); border-color: var(--akzent); }
 
 @media (max-width: 900px) {
   .karte { grid-template-columns: 1fr; }

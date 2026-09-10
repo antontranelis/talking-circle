@@ -78,8 +78,7 @@ async function zeigeRunde(id) {
   $("werkzeuge").hidden = imPapierkorb;
   $("werkzeuge-papierkorb").hidden = !imPapierkorb;
 
-  ausBearbeitung();
-  $("verlauf-blatt").hidden = true;
+  zeigeModus("lesen");
   melde("");
   zeigeBeitraege(runde);
   for (const li of $("runden").children) li.classList.toggle("dran", li.dataset.id === id);
@@ -138,33 +137,39 @@ async function zeigeListe() {
 
 // --- Bearbeiten -----------------------------------------------------------
 
-function ausBearbeitung() {
-  $("werkstatt").hidden = true;
-  $("gelesen").hidden = false;
-  $("bearbeiten").textContent = "Bearbeiten";
+// Die Bühne zeigt genau eines: die Runde, den Editor oder den Verlauf.
+// Jedes davon bekommt die volle Fläche — nichts wird an den Rand gequetscht.
+let modus = "lesen";
+function zeigeModus(neuerModus) {
+  modus = neuerModus;
+  $("gelesen").hidden = modus !== "lesen";
+  $("werkstatt").hidden = modus !== "bearbeiten";
+  $("verlauf-blatt").hidden = modus !== "verlauf";
+  $("bearbeiten").classList.toggle("an", modus === "bearbeiten");
+  $("verlauf-an").classList.toggle("an", modus === "verlauf");
 }
+
+const ausBearbeitung = () => zeigeModus("lesen");
 
 async function inBearbeitung() {
   const text = await frage(`/runde/${gewaehlt.id}.md?roh=1&tz=${encodeURIComponent(zone)}`);
   $("editor").value = text;
   $("editor-status").textContent = "";
-  $("werkstatt").hidden = false;
-  $("gelesen").hidden = true;
-  $("verlauf-blatt").hidden = true;
+  zeigeModus("bearbeiten");
   $("editor").focus();
 }
 
 $("bearbeiten").onclick = async () => {
   try {
-    if ($("werkstatt").hidden) await inBearbeitung();
-    else ausBearbeitung();
+    if (modus === "bearbeiten") zeigeModus("lesen");
+    else await inBearbeitung();
   } catch (e) {
     melde(e.message, "fehler");
   }
 };
 
 $("abbrechen").onclick = () => {
-  ausBearbeitung();
+  zeigeModus("lesen");
   melde("");
 };
 
@@ -229,8 +234,8 @@ $("papierkorb-an").onclick = async () => {
 // --- Verlauf --------------------------------------------------------------
 
 $("verlauf-an").onclick = async () => {
-  if (!$("verlauf-blatt").hidden) {
-    $("verlauf-blatt").hidden = true;
+  if (modus === "verlauf") {
+    zeigeModus("lesen");
     return;
   }
   try {
@@ -259,7 +264,6 @@ $("verlauf-an").onclick = async () => {
                   body: JSON.stringify({ nr: s.nr }),
                 });
                 await zeigeListe();
-                $("verlauf-blatt").hidden = true;
                 melde("Zurückgenommen.", "gut");
               } catch (e) {
                 melde(e.message, "fehler");
@@ -279,7 +283,7 @@ $("verlauf-an").onclick = async () => {
             }),
           ]),
     );
-    $("verlauf-blatt").hidden = false;
+    zeigeModus("verlauf");
   } catch (e) {
     melde(e.message, "fehler");
   }
