@@ -11,7 +11,8 @@ import { alsJsonl, alsMarkdown, standardZone } from "./protokoll.mjs";
 const TRANSCRIPTS = path.join(import.meta.dirname, "transcripts");
 const VORRAT_MAX = 250; // ~30 s bei 128-ms-Blöcken
 const SICHERN_MS = 3000; // Schreibabstand für den laufenden Beitrag
-const STUMM_MS = 8000; // so lange darf gesprochen werden, ohne dass Text kommt
+const STUMM_MS = 15000; // so lange darf gesprochen werden, ohne dass Text kommt
+const SPRACHE_MIN_MS = 4000; // und so viel davon muss hörbar gesprochen worden sein
 const PEGEL_SCHWELLE = 0.012; // darüber gilt ein Block als Sprache
 const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang fehlt
 
@@ -34,6 +35,7 @@ export class Circle {
   #zuletztGesichert = 0; // Zeitpunkt der letzten Sicherung des laufenden Beitrags
   #letzterText = 0; // wann zuletzt Text kam
   #letzteSprache = 0; // wann zuletzt jemand hörbar gesprochen hat
+  #spracheSeitText = 0; // wieviel hörbare Sprache seit dem letzten Text kam
   #takt = null; // schreibt den laufenden Beitrag auch dann fort, wenn gerade nichts kommt
   #queue = Promise.resolve();   // Feeds laufen streng nacheinander
   #wechsel = Promise.resolve();  // Beitragswechsel ebenso
@@ -105,6 +107,7 @@ export class Circle {
     };
     this.state.aktiv = aktiv;
     this.#letzterText = Date.now();
+    this.#spracheSeitText = 0;
     this.#vorrat = this.#vorlauf.splice(0);
     this.#onChange("state");
 
@@ -130,7 +133,10 @@ export class Circle {
   // PCM: Float32Array, 16 kHz mono. Feeds laufen streng nacheinander, weil
   // die Streaming-Session nicht nebenläufig gefüttert werden darf.
   fuettern(pcm) {
-    if (pegel(pcm) > PEGEL_SCHWELLE) this.#letzteSprache = Date.now();
+    if (pegel(pcm) > PEGEL_SCHWELLE) {
+      this.#letzteSprache = Date.now();
+      this.#spracheSeitText += (pcm.length / 16000) * 1000;
+    }
     if (!this.state.aktiv) {
       // Zwischen zwei Beiträgen: die letzten Momente mitlaufen lassen. Wer
       // schon spricht, bevor die Übergabe bestätigt ist, geht so nicht verloren.
@@ -143,12 +149,14 @@ export class Circle {
       if (this.#vorrat && this.#vorrat.length < VORRAT_MAX) this.#vorrat.push(pcm);
       return;
     }
-    // Stream und Beitrag werden festgehalten: noch wartender Ton wird auch dann
-    // fertig verarbeitet, wenn das Mikrofon inzwischen weitergereicht wurde.
-    const stream = this.#stream;
+    // Festgehalten wird der Beitrag, nicht der Strom: Setzt der Wachhund
+    // dazwischen einen neuen auf, läuft der wartende Ton dort hinein statt
+    // verloren zu gehen. Und nach dem Weiterreichen wird zu Ende verarbeitet.
     const aktiv = this.state.aktiv;
     this.#queue = this.#queue
       .then(async () => {
+        const stream = this.#stream;
+        if (!stream || this.state.aktiv !== aktiv) return;
         await stream.feed(pcm);
         const { committed, tentative } = stream.text;
         const ganz = aktiv.vorher ? `${aktiv.vorher} ${committed}`.trim() : committed;
@@ -159,6 +167,7 @@ export class Circle {
         aktiv.committed = ganz;
         aktiv.tentative = tentative;
         this.#letzterText = Date.now();
+        this.#spracheSeitText = 0;
         this.sichernGedrosselt();
         if (this.state.aktiv === aktiv) this.#onChange("live");
       })
@@ -175,9 +184,15 @@ export class Circle {
     if (this.#stream !== stream || this.state.aktiv !== aktiv) return;
     if (jetzt - this.#letzteSprache > 1500) return; // gerade spricht niemand
     if (jetzt - this.#letzterText < STUMM_MS) return;
+    // Ein bisschen Rauschen reicht nicht: es muss auch wirklich geredet worden sein.
+    if (this.#spracheSeitText < SPRACHE_MIN_MS) return;
 
-    console.error(`Erkennung stumm seit ${STUMM_MS / 1000} s — Strom wird neu aufgesetzt`);
+    console.error(
+      `Erkennung stumm: ${Math.round((jetzt - this.#letzterText) / 1000)} s ohne Text ` +
+        `bei ${(this.#spracheSeitText / 1000).toFixed(1)} s Sprache — Strom wird neu aufgesetzt`,
+    );
     this.#letzterText = jetzt;
+    this.#spracheSeitText = 0;
     this.#stream = null;
     try {
       await stream.finalize();
@@ -202,12 +217,14 @@ export class Circle {
   async #beenden() {
     if (!this.state.aktiv) return null;
     const aktiv = this.state.aktiv;
+    // Erst den wartenden Ton fertig verarbeiten — er gehört noch zu diesem
+    // Beitrag —, dann schließen.
+    await this.#queue.catch(() => {});
     const stream = this.#stream;
     this.state.aktiv = null;
     this.#stream = null;
     this.#vorrat = null;
     this.#vorlauf.length = 0;
-    await this.#queue.catch(() => {});
     let text = aktiv.committed;
     if (stream) {
       try {

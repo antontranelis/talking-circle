@@ -277,8 +277,11 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
     env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  // Beim Neuaufsetzen darf kein Ton verloren gehen — er gehört in den neuen Strom.
+  let fehlerausgabe = "";
+  server.stderr.on("data", (d) => (fehlerausgabe += d.toString()));
   t.after(() => server.kill("SIGKILL"));
   await new Promise((ok, fehler) => {
     const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
@@ -297,13 +300,15 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   // Rauschen: hat Pegel, ist aber keine Sprache — das Modell liefert nichts.
   // Der Wachhund muss das als hängenden Strom erkennen. In Echtzeit gefüttert,
   // weil seine Frist an der Uhr hängt.
+  // Schneller als Echtzeit gefüttert, damit sich — wie auf dem Server unter
+  // Last — Ton in der Warteschlange staut, während der Wachhund zuschlägt.
   const rauschen = new Float32Array(2048);
-  const bisNeuaufsetzer = Date.now() + 30_000;
+  const bisNeuaufsetzer = Date.now() + 40_000;
   let neuaufsetzer = 0;
   while (Date.now() < bisNeuaufsetzer && neuaufsetzer === 0) {
     for (let i = 0; i < rauschen.length; i++) rauschen[i] = (Math.random() - 0.5) * 0.2;
     ws.send(Buffer.from(rauschen.buffer, rauschen.byteOffset, rauschen.byteLength));
-    await new Promise((ok) => setTimeout(ok, 128));
+    await new Promise((ok) => setTimeout(ok, 20));
     neuaufsetzer = zustaende.filter((m) => m.typ === "state").at(-1)?.state.neuaufsetzer ?? 0;
   }
   assert.ok(neuaufsetzer >= 1, "der Wachhund hat nicht angeschlagen");
@@ -327,6 +332,11 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   }
   assert.equal(beitraege.length, 1);
   assert.match(beitraege[0].text, /Badeanzug/i, "nach dem Neuaufsetzen kam kein Text mehr");
+  assert.doesNotMatch(
+    fehlerausgabe,
+    /Feed fehlgeschlagen/,
+    `beim Neuaufsetzen ging Ton verloren:\n${fehlerausgabe}`,
+  );
   ws.close();
 });
 
