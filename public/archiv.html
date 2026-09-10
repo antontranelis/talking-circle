@@ -14,6 +14,7 @@
       <span id="anzahl" class="modell"></span>
     </div>
     <div class="kopf-rechts">
+      <button id="papierkorb-an" class="klein" type="button">Papierkorb</button>
       <a class="klein" href="/einrichtung.html">Einrichtung</a>
       <a class="klein" href="/">Zurück zum Kreis</a>
     </div>
@@ -21,16 +22,47 @@
 
   <main class="tafel">
     <section class="verlauf">
-      <h2>Runden</h2>
+      <h2 id="listen-titel">Runden</h2>
       <ol id="runden"></ol>
     </section>
+
     <section class="buehne lesen">
       <div class="buehne-kopf">
         <span id="gelesen-titel" class="sprecher still">Keine Runde gewählt</span>
         <span id="gelesen-zeit" class="uhr"></span>
-        <a id="laden" class="klein" href="#" hidden>Als Markdown laden</a>
+        <div id="werkzeuge" class="werkzeuge" hidden>
+          <button id="bearbeiten" class="klein" type="button">Bearbeiten</button>
+          <button id="umbenennen" class="klein" type="button">Umbenennen</button>
+          <button id="verlauf-an" class="klein" type="button">Verlauf</button>
+          <button id="loeschen" class="klein" type="button">Löschen</button>
+          <a id="laden" class="klein" href="#">Laden</a>
+        </div>
+        <div id="werkzeuge-papierkorb" class="werkzeuge" hidden>
+          <button id="zurueckholen" class="klein" type="button">Wiederherstellen</button>
+        </div>
       </div>
+
+      <p id="meldung" class="status" hidden></p>
+
       <div id="gelesen" class="gelesen"></div>
+
+      <div id="werkstatt" class="werkstatt" hidden>
+        <p class="hinweis-text">
+          Überschriften der Form <code>## Name · 14:37</code> trennen die Beiträge. Eine neue Überschrift
+          teilt einen Block auf — so kommt ein vergessener Sprecher nachträglich zu seinem Beitrag.
+        </p>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div class="werkstatt-fuss">
+          <button id="speichern" class="gross" type="button">Speichern</button>
+          <button id="abbrechen" class="klein" type="button">Abbrechen</button>
+          <span id="editor-status" class="status"></span>
+        </div>
+      </div>
+
+      <div id="verlauf-blatt" class="verlauf-blatt" hidden>
+        <h2>Änderungen</h2>
+        <ol id="schritte"></ol>
+      </div>
     </section>
   </main>
 

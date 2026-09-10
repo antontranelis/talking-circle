@@ -4,7 +4,19 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { Circle, alsMarkdown, gespeicherteRunden, ladeRunde } from "./circle.mjs";
+import { Circle } from "./circle.mjs";
+import { alsMarkdown } from "./protokoll.mjs";
+import {
+  benenneUm,
+  gespeicherteRunden,
+  gueltigeKennung,
+  historie,
+  ladeRunde,
+  loesche,
+  nimmZurueck,
+  speichereMarkdown,
+  stelleWiederHer,
+} from "./archiv.mjs";
 
 const PORT = Number(process.env.PORT ?? 8123);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -42,8 +54,76 @@ function sendeAllen(nachricht) {
   }
 }
 
-const server = http.createServer((req, res) => {
+const antworte = (res, code, daten) => {
+  res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(daten));
+};
+
+async function körper(req) {
+  const stücke = [];
+  for await (const teil of req) stücke.push(teil);
+  try {
+    return JSON.parse(Buffer.concat(stücke).toString() || "{}");
+  } catch {
+    return {};
+  }
+}
+
+// Die laufende Runde wird alle paar Sekunden fortgeschrieben — eine Bearbeitung
+// im Archiv wäre nach dem nächsten Wort wieder weg.
+const laeuftGerade = (id) => id === circle.state.id;
+
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
+  const teile = url.pathname.split("/").filter(Boolean);
+
+  // --- Archiv ---
+  if (url.pathname === "/api/runden") {
+    return antworte(res, 200, gespeicherteRunden());
+  }
+  if (url.pathname === "/api/papierkorb") {
+    return antworte(res, 200, gespeicherteRunden({ geloescht: true }));
+  }
+
+  // /api/runde/<id>[/<was>]
+  if (teile[0] === "api" && teile[1] === "runde" && teile[2]) {
+    const id = decodeURIComponent(teile[2]);
+    const was = teile[3];
+    if (!gueltigeKennung(id)) return antworte(res, 404, { fehler: "Runde nicht gefunden" });
+
+    if (req.method === "GET" && was === "historie") {
+      return antworte(res, 200, historie(id));
+    }
+    if (req.method === "POST" && was === "wiederherstellen") {
+      const { fehler, runde } = stelleWiederHer(id);
+      return antworte(res, fehler ? 404 : 200, fehler ? { fehler } : { runde });
+    }
+    if (laeuftGerade(id) && req.method !== "GET") {
+      return antworte(res, 409, {
+        fehler: "Diese Runde läuft gerade. Beende sie erst mit „Neue Runde“, dann lässt sie sich bearbeiten.",
+      });
+    }
+    if (req.method === "PUT" && !was) {
+      const { markdown, zeitzone } = await körper(req);
+      const { fehler, runde } = speichereMarkdown(id, markdown ?? "", { zeitzone });
+      return antworte(res, fehler ? 404 : 200, fehler ? { fehler } : { runde });
+    }
+    if (req.method === "POST" && was === "umbenennen") {
+      const { titel } = await körper(req);
+      const { fehler, runde } = benenneUm(id, titel);
+      return antworte(res, fehler ? 400 : 200, fehler ? { fehler } : { runde });
+    }
+    if (req.method === "POST" && was === "zurueck") {
+      const { nr } = await körper(req);
+      const { fehler, runde } = nimmZurueck(id, nr);
+      return antworte(res, fehler ? 400 : 200, fehler ? { fehler } : { runde });
+    }
+    if (req.method === "DELETE" && !was) {
+      const { fehler } = loesche(id);
+      return antworte(res, fehler ? 404 : 200, fehler ? { fehler } : { ok: true });
+    }
+  }
+
   if (url.pathname === "/export.md") {
     res.writeHead(200, {
       "content-type": "text/markdown; charset=utf-8",
@@ -52,26 +132,24 @@ const server = http.createServer((req, res) => {
     // Der Browser sagt, in welcher Zeitzone er sitzt.
     return res.end(circle.markdown(url.searchParams.get("tz") ?? undefined));
   }
-  // Das Archiv: alle bisherigen Runden ansehen und herunterladen.
-  if (url.pathname === "/api/runden") {
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    return res.end(JSON.stringify(gespeicherteRunden()));
-  }
+
+  // Eine gespeicherte Runde einzeln — als Markdown zum Laden oder Bearbeiten,
+  // als JSON für die Anzeige.
   const einzeln = url.pathname.match(/^\/runde\/([^/]+)\.(md|json)$/);
   if (einzeln) {
-    const runde = ladeRunde(decodeURIComponent(einzeln[1]));
+    const id = decodeURIComponent(einzeln[1]);
+    const runde = ladeRunde(id) ?? ladeRunde(id, { geloescht: true });
     if (!runde) {
       res.writeHead(404);
       return res.end("Runde nicht gefunden");
     }
     if (einzeln[2] === "json") {
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      return res.end(JSON.stringify(runde));
+      return antworte(res, 200, runde);
     }
-    res.writeHead(200, {
-      "content-type": "text/markdown; charset=utf-8",
-      "content-disposition": `attachment; filename="${runde.id}.md"`,
-    });
+    const kopf = { "content-type": "text/markdown; charset=utf-8" };
+    // Zum Bearbeiten wird der Text gelesen, nicht heruntergeladen.
+    if (!url.searchParams.has("roh")) kopf["content-disposition"] = `attachment; filename="${id}.md"`;
+    res.writeHead(200, kopf);
     return res.end(alsMarkdown(runde, url.searchParams.get("tz") ?? undefined));
   }
 
@@ -113,17 +191,17 @@ wss.on("connection", (ws) => {
           aufnahmeClient = ws;
           sendeAllen({ typ: "state", state: zustandMitAufnahme() });
           break;
-        case "start":
-          await circle.beitragStarten(m.sprecher ?? "Unbekannt");
-          break;
-        case "stop":
-          await circle.beitragBeenden();
-          break;
         case "neueRunde":
           await circle.neueRunde();
           break;
         case "setzen":
           circle.setzen(m);
+          break;
+        case "start":
+          await circle.beitragStarten(m.sprecher ?? "Unbekannt");
+          break;
+        case "stop":
+          await circle.beitragBeenden();
           break;
         case "aendern":
           circle.beitragAendern(m.index, m);

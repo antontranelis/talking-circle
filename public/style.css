@@ -140,6 +140,41 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .gelesen .was { font-size: 1rem; line-height: 1.6; margin: 0.2rem 0 0; }
 #laden { margin-left: auto; }
 
+/* --- Archiv: Werkzeuge, Editor, Verlauf --- */
+.werkzeuge { display: flex; gap: 0.35rem; margin-left: auto; flex-wrap: wrap; }
+.bearbeitet {
+  font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--gedimmt); border: 1px solid var(--rand); border-radius: 4px; padding: 0.05rem 0.3rem;
+  vertical-align: 0.1em;
+}
+.status.gut { color: var(--akzent); }
+
+.werkstatt { display: flex; flex-direction: column; gap: 0.8rem; min-height: 0; flex: 1; }
+.hinweis-text { color: var(--gedimmt); font-size: 0.85rem; line-height: 1.55; margin: 0; }
+.hinweis-text code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.92em; background: var(--flaeche-hoch); padding: 0.1em 0.35em; border-radius: 4px;
+}
+#editor {
+  flex: 1; min-height: 22rem; resize: none;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.92rem; line-height: 1.65;
+  padding: 1rem 1.1rem; border-radius: 12px;
+  border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--text);
+  tab-size: 2;
+}
+#editor:focus { outline: none; border-color: var(--akzent); }
+.werkstatt-fuss { display: flex; align-items: center; gap: 0.9rem; }
+
+.verlauf-blatt {
+  border-top: 1px solid var(--rand); padding-top: 1rem; margin-top: 0.4rem;
+  display: flex; flex-direction: column; gap: 0.8rem; max-height: 45%; overflow-y: auto;
+}
+.verlauf-blatt ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+.verlauf-blatt .eintrag-kopf { gap: 0.6rem; }
+.verlauf-blatt .wer { text-transform: capitalize; }
+.verlauf-blatt .weg, .verlauf-blatt button.klein { margin-left: auto; }
+
 @media (max-width: 900px) {
   .karte { grid-template-columns: 1fr; }
   .seite-kreis { height: auto; min-height: 100vh; }

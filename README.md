@@ -136,6 +136,32 @@ das sie abruft.
 Gelesen wird direkt aus `transcripts/`. Eine Runde, die noch läuft, ist mit
 dabei; der laufende Beitrag ist als *spricht noch* gekennzeichnet.
 
+### Korrigieren
+
+**Bearbeiten** öffnet das ganze Protokoll als Markdown. Überschriften der Form
+`## Name · 14:37` trennen die Beiträge — eine zusätzliche Überschrift teilt
+einen Block auf. Damit lässt sich der häufigste Fall reparieren: Die Leertaste
+kam zu spät, zwei Menschen stecken in einem Beitrag, und einer fehlt im
+Protokoll ganz.
+
+Zeitstempel bleiben erhalten, wo Überschrift und bisheriger Beitrag
+zusammenpassen. Neue Beiträge bekommen ihre Zeit aus der Überschrift, am
+richtigen Kalendertag, auch wenn die Runde über Mitternacht ging.
+
+**Umbenennen** ändert den Titel, **Löschen** legt die Runde in den Papierkorb —
+von dort holt sie **Wiederherstellen** zurück.
+
+### Änderungen zurücknehmen
+
+**Verlauf** zeigt jede Änderung an einer Runde mit Zeitpunkt und Beschreibung.
+Vor jeder Änderung wird der vorherige Stand vollständig gesichert, und
+**Zurücknehmen** stellt ihn wieder her. Die Rücknahme ist selbst ein Schritt im
+Verlauf — die Geschichte bleibt vollständig, nichts geht verloren.
+
+Die laufende Runde lässt sich nicht bearbeiten: Sie wird alle drei Sekunden
+fortgeschrieben und würde die Korrektur überschreiben. Erst **Neue Runde**,
+dann steht sie im Archiv zur Bearbeitung bereit.
+
 ## Ins Session-Archiv
 
 Neben `.md` und `.json` schreibt jede Runde eine `.jsonl` im Format des
@@ -194,6 +220,8 @@ Runde mit — aufnehmen darf allerdings nur der Rechner, der die Seite über
 | `public/einrichtung.html/.js` | Eigene Seite für Namen, Mikrofon, Sprache |
 | `public/index.html`, `kreis.js` | Die laufende Runde: Bühne links, Verlauf rechts |
 | `public/verbindung.js` | Gemeinsame WebSocket-Leitung beider Seiten |
+| `protokoll.mjs` | Eine Runde als Markdown — und aus Markdown zurück |
+| `archiv.mjs` | Gespeicherte Runden: bearbeiten, umbenennen, löschen, Historie |
 | `public/pcm-worklet.js` | Nimmt 16-kHz-Mono in 128-ms-Blöcken ab |
 
 ## Lizenz

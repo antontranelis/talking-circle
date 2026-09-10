@@ -562,3 +562,99 @@ test("Das Archiv listet frühere Runden und gibt sie einzeln heraus", async (t) 
   }
   ws.close();
 });
+
+test("Protokolle lassen sich über die Schnittstelle korrigieren und zurücknehmen", async (t) => {
+  const port = PORT + 9;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", TZ: "Europe/Berlin" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const zustaende = [];
+  ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
+  await new Promise((ok) => ws.on("open", ok));
+  ws.send(JSON.stringify({ typ: "aufnehmen" }));
+  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton", "Eva"], titel: "Korrekturrunde" }));
+  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const teil = pcm.subarray(0, 16000 * 6);
+  for (let i = 0; i < teil.length; i += 2048) {
+    const block = teil.subarray(i, Math.min(i + 2048, teil.length));
+    ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    await new Promise((ok) => setTimeout(ok, 5));
+  }
+  ws.send(JSON.stringify({ typ: "stop" }));
+  const frist = Date.now() + 25_000;
+  while (Date.now() < frist) {
+    if (zustaende.filter((m) => m.typ === "state").at(-1)?.state.beitraege.length) break;
+    await new Promise((ok) => setTimeout(ok, 50));
+  }
+  const id = zustaende.filter((m) => m.typ === "state").at(-1).state.id;
+  const url = `http://127.0.0.1:${port}`;
+  const json = (p, o) => fetch(`${url}${p}`, o).then(async (r) => ({ status: r.status, daten: await r.json() }));
+
+  // Die laufende Runde darf nicht bearbeitet werden — sie würde sich selbst überschreiben.
+  const gesperrt = await json(`/api/runde/${id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ markdown: "# Nein", zeitzone: "Europe/Berlin" }),
+  });
+  assert.equal(gesperrt.status, 409, "die laufende Runde war bearbeitbar");
+
+  // Nach dem Rundenwechsel ist sie es.
+  ws.send(JSON.stringify({ typ: "neueRunde" }));
+  await new Promise((ok) => setTimeout(ok, 600));
+
+  // Der typische Fall: ein Beitrag enthält zwei Sprecher und wird geteilt.
+  const roh = await fetch(`${url}/runde/${id}.md?roh=1&tz=Europe/Berlin`).then((r) => r.text());
+  const kopfZeile = roh.match(/^## .*$/m)[0];
+  const uhr = kopfZeile.match(/(\d{2}:\d{2})/)[1];
+  const geteilt = `# Korrekturrunde\n\n${kopfZeile}\n\nErster Teil.\n\n## Eva · ${uhr}\n\nZweiter Teil von Eva.\n`;
+  const gespeichert = await json(`/api/runde/${id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ markdown: geteilt, zeitzone: "Europe/Berlin" }),
+  });
+  assert.equal(gespeichert.status, 200);
+  assert.deepEqual(gespeichert.daten.runde.beitraege.map((b) => b.sprecher), ["Anton", "Eva"]);
+
+  // Umbenennen
+  await json(`/api/runde/${id}/umbenennen`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ titel: "Umbenannt" }),
+  });
+  const nachher = await json(`/runde/${id}.json`);
+  assert.equal(nachher.daten.titel, "Umbenannt");
+
+  // Der Verlauf kennt beide Schritte, jüngster zuletzt.
+  const schritte = (await json(`/api/runde/${id}/historie`)).daten;
+  assert.deepEqual(schritte.map((s) => s.aktion), ["bearbeitet", "umbenannt"]);
+
+  // Zurücknehmen der Bearbeitung stellt den Originaltext wieder her.
+  await json(`/api/runde/${id}/zurueck`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nr: schritte[0].nr }),
+  });
+  const zurueck = (await json(`/runde/${id}.json`)).daten;
+  assert.equal(zurueck.beitraege.length, 1);
+  assert.match(zurueck.beitraege[0].text, /Badeanzug/i);
+
+  // Löschen und Wiederherstellen
+  await fetch(`${url}/api/runde/${id}`, { method: "DELETE" });
+  assert.ok(!(await json("/api/runden")).daten.some((r) => r.id === id));
+  assert.ok((await json("/api/papierkorb")).daten.some((r) => r.id === id));
+  await json(`/api/runde/${id}/wiederherstellen`, { method: "POST" });
+  assert.ok((await json("/api/runden")).daten.some((r) => r.id === id));
+  ws.close();
+});
