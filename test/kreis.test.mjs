@@ -178,3 +178,85 @@ test("Eine Reihenfolge, die nicht zum Kreis passt, wird verworfen", () => {
     assert.deepEqual(kreis.state.teilnehmende.map((t) => t.id), urspruenglich, `${was}: der Kreis hat sich geändert`);
   }
 });
+
+// --- Anhalten und Fortsetzen ---------------------------------------------
+//
+// Der Halt ist kein Ende: Der Beitrag bleibt offen, nur Aufnahme und Uhr
+// stehen still. Ohne Modell läuft kein Erkennungsstrom — geprüft wird der
+// Kreis, nicht die Erkennung.
+
+const laut = () => Float32Array.from({ length: 160 }, () => 0.4);
+
+test("Anhalten lässt den Beitrag stehen und fortsetzen macht im selben weiter", async () => {
+  const kreis = new Circle();
+  const anton = kreis.beitreten("Anton", 1);
+  kreis.gibMikrofonAn(anton);
+  await kreis.beitragStarten("Anton");
+
+  assert.equal(kreis.state.angehalten, false, "eine Runde beginnt nicht im Halt");
+  assert.equal(kreis.anhalten(), true);
+  assert.equal(kreis.state.angehalten, true);
+  assert.ok(kreis.state.aktiv, "der Beitrag wurde beendet statt angehalten");
+  assert.equal(kreis.state.beitraege.length, 0, "der Halt hat einen Beitrag abgelegt");
+  assert.equal(kreis.anhalten(), false, "zweimal anhalten ist kein zweiter Halt");
+
+  const begonnen = kreis.state.aktiv.begonnen;
+  await warte(60);
+  assert.equal(kreis.fortsetzen(), true);
+  assert.equal(kreis.state.angehalten, false);
+  assert.equal(kreis.state.aktiv.begonnen, begonnen, "es wurde ein neuer Beitrag begonnen");
+  assert.ok(kreis.state.aktiv.pauseMs >= 50, `die Pausenzeit wurde nicht gemerkt: ${kreis.state.aktiv.pauseMs}`);
+  assert.equal(kreis.fortsetzen(), false, "fortsetzen ohne Halt tut etwas");
+});
+
+test("Im Halt steht die Uhr — die Pause zählt nicht zur Redezeit", async () => {
+  const kreis = new Circle();
+  await kreis.beitragStarten("Anton");
+
+  await warte(40);
+  kreis.anhalten();
+  const stand = kreis.verstricheneMs();
+  await warte(80);
+  assert.equal(kreis.verstricheneMs(), stand, "die Uhr ist im Halt weitergelaufen");
+
+  kreis.fortsetzen();
+  await warte(30);
+  assert.ok(kreis.verstricheneMs() >= stand, "die Uhr läuft nach dem Fortsetzen nicht weiter");
+  assert.ok(
+    kreis.verstricheneMs() < Date.now() - new Date(kreis.state.aktiv.begonnen) - 50,
+    "die Pausenzeit steckt weiter in der Redezeit",
+  );
+});
+
+test("Im Halt wird der Ton verworfen", async () => {
+  const kreis = new Circle();
+  await kreis.beitragStarten("Anton");
+
+  kreis.fuettern(laut());
+  assert.ok(kreis.pegelJetzt > 0.2, "der Pegel kommt im Lauf nicht an");
+
+  kreis.anhalten();
+  assert.equal(kreis.pegelJetzt, 0, "der Pegel bleibt im Halt stehen");
+  kreis.fuettern(laut());
+  assert.equal(kreis.pegelJetzt, 0, "im Halt ist Ton angekommen");
+
+  kreis.fortsetzen();
+  kreis.fuettern(laut());
+  assert.ok(kreis.pegelJetzt > 0.2, "nach dem Fortsetzen kommt kein Ton mehr an");
+});
+
+test("Weitergeben und Beenden heben den Halt auf", async () => {
+  const kreis = new Circle();
+  await kreis.beitragStarten("Anton");
+  kreis.anhalten();
+
+  await kreis.beitragStarten("Eva");
+  assert.equal(kreis.state.angehalten, false, "der neue Beitrag beginnt im Halt");
+  assert.equal(kreis.state.aktiv.sprecher, "Eva");
+  assert.equal(kreis.state.aktiv.pauseMs, 0, "die Pausenzeit des Vorgängers hängt am neuen Beitrag");
+
+  kreis.anhalten();
+  await kreis.beitragBeenden();
+  assert.equal(kreis.state.angehalten, false, "nach dem Beenden steht der Kreis im Halt");
+  assert.equal(kreis.state.aktiv, null);
+});

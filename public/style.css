@@ -1,13 +1,27 @@
+/* Die Schriften kommen von Google; ohne Netz greift der Fallback-Stapel, die
+   Maße bleiben dieselben. */
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
 :root {
   --grund: #14110f;
   --flaeche: #1d1917;
   --flaeche-hoch: #241f1c;
+  --flaeche-fuss: #171412;
   --rand: #322c28;
+  --rand-hoch: #3a322c;
+  --rand-leise: #221d1a;
   --text: #f2ece6;
+  --text-weich: #cdc2b9;
   --gedimmt: #9a8f86;
+  --gedimmt-tief: #6f665f;
   --akzent: #e5a05c;
   --akzent-weich: #6b4a26;
+  --akzent-tief: #b07c45;
   --zu-lang: #e07a5f;
+  --rot: #e0574a;
+  --schrift: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --schrift-disp: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --schrift-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   color-scheme: dark;
 }
 
@@ -18,12 +32,14 @@ body {
   margin: 0;
   background: var(--grund);
   color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 400 14px/1.5 var(--schrift);
+  -webkit-font-smoothing: antialiased;
 }
 
-h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
-h2 { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gedimmt); margin: 0; }
+h1 { font-family: var(--schrift-disp); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: var(--gedimmt); margin: 0; }
 a { color: inherit; }
+.mono { font-family: var(--schrift-mono); font-variant-numeric: tabular-nums; }
 
 button, .klein {
   font: inherit; cursor: pointer; border-radius: 10px;
@@ -33,7 +49,7 @@ button:hover, a.klein:hover { border-color: var(--akzent); }
 .gross { padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 600; background: var(--akzent); color: #221a12; border-color: transparent; }
 .gross:hover { filter: brightness(1.08); border-color: transparent; }
 .klein { padding: 0.4rem 0.75rem; font-size: 0.85rem; color: var(--gedimmt); text-decoration: none; display: inline-block; }
-kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; opacity: 0.55; border-radius: 5px; padding: 0.25em 0.4em; margin-left: 0.5em; }
+kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacity: 0.55; border-radius: 5px; padding: 0.25em 0.4em; margin-left: 0.5em; }
 .status { color: var(--gedimmt); font-size: 0.85rem; margin: 0; }
 .status.fehler { color: #e88b7a; }
 .platzhalter { color: var(--gedimmt); font-size: 1rem; }
@@ -62,64 +78,292 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .feld textarea { resize: vertical; line-height: 1.6; }
 .feld span { overflow-wrap: anywhere; }
 
-/* --- Kreis: Kopf, zwei Spalten, Fuß --- */
+/* ======================================================================
+   Der Kreis: Kopf, Kreisspalte, Verlauf
+   ====================================================================== */
 .seite-kreis {
-  height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 1rem; padding: 1rem 1.5rem 1.2rem;
+  height: 100vh; height: 100dvh; overflow: hidden;
+  display: flex; flex-direction: column;
 }
-.kopf { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
-.kopf-links { display: flex; align-items: baseline; gap: 0.6rem; }
-/* Umbrechen, nicht schieben: Ohne das zwingt die Knopfreihe die Seite auf
-   ihre eigene Breite, und das Telefon zeigt die ganze Runde verkleinert. */
-.kopf-rechts { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; flex-wrap: wrap; }
-.modell { color: var(--gedimmt); font-size: 0.7rem; }
 
-/* Kein Markieren, kein iOS-Callout: Am Finger wird hier gezogen, nicht
-   gelesen — sonst markiert ein längeres Drücken den Namen. */
-.runde {
-  display: flex; flex-wrap: wrap; gap: 0.4rem;
+.seite-kreis .kopf {
+  height: 64px; flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 0 28px; border-bottom: 1px solid var(--rand-leise); flex-wrap: wrap;
+}
+.seite-kreis .kopf h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.kopf-rechts { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.trenner { width: 1px; height: 22px; background: #2a2420; }
+
+/* Knöpfe im Stil der Entwürfe: runde Pillen, ruhig. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 14px; border-radius: 999px; border: 1px solid var(--rand);
+  background: var(--flaeche); color: var(--text-weich); font: 500 13px/1 var(--schrift);
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--akzent-weich); color: var(--text); }
+.btn.prim { background: var(--akzent); color: #241a11; border-color: transparent; font-weight: 600; }
+.btn.still { background: transparent; border-color: transparent; color: var(--gedimmt); font-size: 12.5px; }
+.btn.stark { border-color: var(--akzent-weich); color: var(--text); }
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.btn svg { display: block; }
+
+/* Beitritt: Name eintragen, fertig. Danach nur noch der leise Nebenweg. */
+.beitritt {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--flaeche); border: 1px solid var(--rand); border-radius: 999px;
+  padding: 3px 3px 3px 14px;
+}
+.beitritt input {
+  font: inherit; font-size: 13px; border: none; background: transparent; color: var(--text);
+  width: 9.5rem; padding: 0; outline: none;
+}
+.beitritt input::placeholder { color: var(--gedimmt-tief); }
+.beitritt .btn { padding: 6px 13px; font-size: 12.5px; }
+
+/* Der Umschalter am Telefon: zwei Vollansichten, eine Pille. */
+.pille-zeile { display: none; }
+.pille {
+  display: inline-flex; gap: 4px; background: var(--flaeche);
+  border: 1px solid var(--rand); border-radius: 999px; padding: 3px;
+}
+.pille button {
+  border: none; background: transparent; color: var(--gedimmt);
+  padding: 6px 18px; border-radius: 999px; font: 500 13px/1.2 var(--schrift);
+}
+.pille button[aria-selected="true"] { background: var(--akzent); color: #241a11; font-weight: 600; }
+
+/* Das Mehr-Menü hängt unter dem Kopf, rechts. */
+.menue {
+  position: absolute; top: 58px; right: 28px; width: 250px; z-index: 30;
+  background: #201b18; border: 1px solid var(--rand-hoch); border-radius: 16px; padding: 7px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.menue button, .menue a {
+  display: flex; align-items: center; gap: 10px; text-align: left; text-decoration: none;
+  padding: 9px 12px; border-radius: 9px; border: none; background: transparent;
+  color: #e6ded7; font: 400 13.5px/1.4 var(--schrift);
+}
+.menue button:hover, .menue a:hover { background: #2a2320; border: none; }
+.menue .hinweis { margin-left: auto; font-family: var(--schrift-mono); font-size: 10.5px; color: var(--gedimmt-tief); }
+.menue .rot { color: var(--zu-lang); }
+.menue .strich { height: 1px; background: #2a2420; margin: 5px 8px; }
+
+/* --- Bühne: Kreis links, Verlauf rechts --- */
+.seite-kreis .tafel { flex: 1; display: flex; gap: 24px; padding: 16px 28px; min-height: 0; }
+.kreisspalte {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 18px;
+}
+
+/* Der Ring: leere Mitte, Plätze auf der Bahn. Die Maße setzt kreis.js. */
+.ring {
+  position: relative; flex: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
-.runde button { padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.85rem; color: var(--gedimmt); }
-.runde button.dran { background: var(--akzent); color: #221a12; border-color: transparent; font-weight: 600; }
-.runde button.war { color: var(--text); border-color: var(--akzent-weich); }
-/* Gerät zu, aber weiter im Kreis: gedimmt, nicht weg. */
-.runde button.weg { opacity: 0.45; }
-/* Wer an diesem Gerät sitzt, bekommt einen Punkt. */
-.runde button.ich::before { content: "•"; color: var(--akzent); margin-right: 0.35rem; }
-.runde button.dran.ich::before { color: inherit; }
+.ring-bahn { position: absolute; inset: 0; }
+.schweif { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 999px; pointer-events: none; }
+.marke { position: absolute; }
 
-/* Die eigenen Leute tragen ein × zum Aufstehen. */
-/* touch-action: none — sonst scrollt das Telefon, statt den Chip zu ziehen. */
-.runde .chip, .runde .chip button {
-  /* touch-action auch auf dem Knopf: Er bekommt den pointerdown, und ohne
-     das scrollt oder zoomt das Telefon, statt den Chip zu ziehen. */
-  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+.platz {
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: grab; touch-action: none;
 }
-.runde .chip { display: inline-flex; align-items: center; gap: 0.15rem; cursor: grab; }
-.runde .chip.zieht { opacity: 0.4; cursor: grabbing; }
-/* Die Lücke: hier landet der Chip beim Loslassen. */
-.runde .chip-luecke {
-  width: 2.5rem; height: 1.9rem; border-radius: 999px;
-  border: 1px dashed var(--akzent); background: var(--flaeche-hoch);
+.platz .av {
+  position: relative; width: 46px; height: 46px; border-radius: 999px;
+  border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--gedimmt);
+  display: grid; place-items: center; font-size: 15px; font-weight: 600;
+  transition: box-shadow 90ms linear, transform 90ms linear;
 }
-.runde .chip.zieht button { pointer-events: none; }
-.runde .chip-weg {
-  padding: 0.3rem 0.45rem; border-radius: 999px; font-size: 0.8rem; line-height: 1;
-  color: var(--gedimmt); border-color: transparent; background: transparent;
+.platz .nm { font-size: 11.5px; color: var(--gedimmt); line-height: 1.2; text-align: center; }
+.platz .weg-hinweis { font-size: 10px; color: var(--gedimmt-tief); }
+.platz.war .av { border-color: var(--akzent-weich); color: var(--text); }
+.platz.war .nm { color: var(--text); }
+.platz.dran .av {
+  background: var(--akzent); color: #241a11; border-color: transparent;
+  box-shadow: 0 0 0 7px rgba(229, 160, 92, 0.12), 0 0 26px rgba(229, 160, 92, 0.28);
 }
-.runde .chip-weg:hover { color: var(--zu-lang); border-color: var(--zu-lang); }
+.platz.dran .nm { color: var(--akzent); font-weight: 600; }
+.platz.weg .av { opacity: 0.42; border-style: dashed; }
+.platz.weg .nm { opacity: 0.6; }
+/* Wer an diesem Gerät sitzt, trägt einen Punkt. */
+.platz .punkt {
+  position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 999px;
+  background: var(--akzent); border: 2px solid var(--grund);
+}
+.platz-weg {
+  position: absolute; top: -6px; left: 50%; margin-left: 12px;
+  width: 22px; height: 22px; padding: 0; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--grund); color: var(--gedimmt); border: 1px solid var(--rand); opacity: 0;
+}
+.platz:hover .platz-weg, .platz-weg:focus-visible { opacity: 1; }
+.platz-weg:hover { color: var(--zu-lang); border-color: var(--zu-lang); }
+/* Am Finger gibt es kein Schweben — dort steht das × immer. */
+@media (hover: none) { .platz-weg { opacity: 1; } }
 
-/* Beitritt: Name eintragen, fertig — im Kopf neben dem Kreis. */
-.beitritt { display: flex; gap: 0.4rem; align-items: center; }
-.beitritt input {
-  font: inherit; font-size: 0.85rem; padding: 0.35rem 0.7rem; width: 9rem; border-radius: 999px;
-  border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--text);
+/* Ziehen: Der gezogene Platz wird durchscheinend, die Lücke zeigt sein Ziel. */
+.platz.zieht { opacity: 0.45; cursor: grabbing; z-index: 5; }
+.platz.zieht .platz-weg { display: none; }
+.luecke {
+  position: absolute; transform: translate(-50%, -50%); border-radius: 999px;
+  border: 1.5px dashed var(--akzent); background: var(--flaeche-hoch); pointer-events: none;
 }
-.beitritt input::placeholder { color: var(--gedimmt); }
 
+/* --- Steuerung: Zeitstrahl und drei gleich große Griffe --- */
+.steuerung { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.zeitstrahl { width: 320px; max-width: 100%; display: flex; flex-direction: column; gap: 5px; }
+.zeitzeile { display: flex; align-items: center; gap: 8px; }
+.zeitzeile span { font-family: var(--schrift-mono); font-variant-numeric: tabular-nums; font-size: 11.5px; font-weight: 500; color: var(--gedimmt); }
+.zeitzeile .grenze { margin-left: auto; font-weight: 400; color: var(--gedimmt-tief); }
+.balken { height: 4px; border-radius: 999px; background: #2a2420; overflow: hidden; }
+.balken i { display: block; height: 100%; width: 0; background: var(--akzent-tief); border-radius: 999px; transition: width 0.9s linear; }
+.zeitstrahl.bald .zeitzeile span:first-child { color: var(--akzent); }
+.zeitstrahl.bald .balken i { background: var(--akzent); }
+.zeitstrahl.ueber .zeitzeile span { color: var(--zu-lang); }
+.zeitstrahl.ueber .balken i { background: var(--zu-lang); }
+.zeitstrahl.halt .zeitzeile span:first-child { color: #8b8079; }
+.zeitstrahl.halt .zeitzeile .grenze { color: #5c5149; }
+.zeitstrahl.halt .balken i { background: #5c5149; transition: none; }
+
+.griffe { display: flex; align-items: center; gap: 16px; }
+.griff {
+  width: 60px; height: 60px; padding: 0; border-radius: 999px;
+  display: grid; place-items: center;
+  border: 1px solid #3a322c; background: var(--flaeche); color: var(--text-weich);
+}
+.griff:hover { border-color: var(--akzent-weich); color: var(--text); }
+.griff.prim { background: var(--akzent); color: #241a11; border-color: transparent; }
+.griff.prim:hover { filter: brightness(1.06); border-color: transparent; }
+/* Im Halt fasst sich das Fortsetzen bernsteinfarben ein. */
+.griff.halt {
+  border-color: var(--akzent); color: var(--akzent); background: rgba(229, 160, 92, 0.09);
+  box-shadow: 0 0 0 3px rgba(229, 160, 92, 0.12);
+}
+.griff[disabled] { opacity: 0.4; cursor: default; }
+.griff[disabled]:hover { border-color: #3a322c; color: var(--text-weich); }
+
+/* --- Verlauf --- */
+.seite-kreis .verlauf {
+  width: 452px; flex: none; min-height: 0;
+  background: var(--flaeche); border: 1px solid var(--rand); border-radius: 16px;
+  padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+}
+.verlauf-kopf { display: flex; align-items: center; gap: 8px; }
+.verlauf-kopf .anzahl { margin-left: auto; font-size: 11.5px; color: var(--gedimmt-tief); }
+.verlauf-feld { position: relative; flex: 1; min-height: 0; }
+.verlauf-schleier {
+  position: absolute; left: 0; right: 0; top: 0; height: 40px; z-index: 2; pointer-events: none;
+  background: linear-gradient(var(--flaeche), rgba(29, 25, 23, 0));
+}
+.stift {
+  position: absolute; right: 0; top: 0; z-index: 3; width: 32px; height: 32px; padding: 0;
+  border-radius: 999px; display: grid; place-items: center;
+  background: var(--flaeche); border-color: transparent; color: var(--gedimmt);
+}
+.seite-kreis .verlauf ol {
+  list-style: none; margin: 0; padding: 0; height: 100%; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 15px;
+}
+/* Der Verlauf steht unten auf: Das Neueste liegt an der Kante zur Steuerung. */
+.seite-kreis .verlauf ol > :first-child { margin-top: auto; }
+.seite-kreis .verlauf li { display: flex; flex-direction: column; gap: 4px; }
+.eintrag-kopf { display: flex; align-items: center; gap: 8px; }
+.wer { font-size: 13px; font-weight: 600; color: var(--akzent); }
+.wann { font-family: var(--schrift-mono); font-size: 11px; color: var(--gedimmt-tief); }
+.seite-kreis .was {
+  margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-weich);
+  text-wrap: pretty; outline: none; border-radius: 6px;
+}
+.seite-kreis .was:focus { box-shadow: 0 0 0 2px var(--akzent-weich); }
+.seite-kreis .verlauf .weg {
+  opacity: 0; margin-left: auto; background: none; border: none; color: var(--gedimmt);
+  padding: 0; line-height: 0; display: flex;
+}
+.seite-kreis .verlauf li:hover .weg { opacity: 1; }
+
+/* Der laufende Beitrag: dieselbe Formatierung, nur in einer gefassten Karte. */
+.seite-kreis li.laufend {
+  background: var(--flaeche-hoch); border: 1px solid var(--akzent-weich); border-radius: 16px;
+  padding: 11px 13px 13px; gap: 5px;
+}
+.seite-kreis li.laufend.im-halt { border-color: var(--rand-hoch); }
+.seite-kreis li.laufend .was { color: var(--text); font-size: 14px; }
+.seite-kreis li.laufend .offen { color: #8b8079; }
+/* Solange nichts gesagt ist: drei Punkte, sonst nichts. */
+.tippt { display: inline-flex; align-items: center; gap: 6px; height: 16px; }
+.tippt i { display: block; width: 7px; height: 7px; border-radius: 999px; background: var(--gedimmt-tief); animation: tippen 1.3s ease-in-out infinite; }
+.tippt i:nth-child(2) { animation-delay: 0.18s; }
+.tippt i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes tippen {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 0.9; transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tippt i { animation: none; opacity: 0.55; }
+  .platz .av { transition: none; }
+}
+
+/* --- Die Ecke unten links: ein Punkt, drei Zustände --- */
+.rec-griff {
+  position: fixed; left: 18px; bottom: 16px; z-index: 20;
+  width: 44px; height: 44px; padding: 0; border-radius: 999px;
+  border-color: transparent; background: transparent;
+  display: grid; place-items: center; opacity: 0.85;
+}
+.rec-griff:hover { border-color: transparent; opacity: 1; }
+.rec-griff i { display: block; width: 13px; height: 13px; border-radius: 999px; border: 2px solid var(--gedimmt-tief); }
+.rec-griff.hier i { background: var(--rot); border-color: transparent; box-shadow: 0 0 0 5px rgba(224, 87, 74, 0.16); }
+.rec-griff.gedimmt { opacity: 0.5; }
+.rec-griff.fremd i { background: #8c463c; border-color: transparent; box-shadow: 0 0 0 5px rgba(224, 87, 74, 0.07); }
+.seite-kreis .status {
+  position: fixed; left: 70px; bottom: 22px; z-index: 20;
+  font-size: 11.5px; color: var(--gedimmt-tief); max-width: 60vw;
+}
+
+/* --- Nur Sprecher: derselbe Bildschirm ohne Verlauf --- */
+.ohne-text .verlauf { display: none; }
+
+/* --- Telefon: zwei Vollansichten, umschaltbar über die Pille --- */
+@media (max-width: 760px) {
+  .seite-kreis .kopf { height: auto; padding: 14px 16px 10px; gap: 8px; border-bottom: none; }
+  .kopf-rechts { gap: 6px; }
+  .kopf-rechts .trenner { display: none; }
+  .pille-zeile { display: flex; flex-basis: 100%; justify-content: center; order: 3; }
+  .menue { top: 60px; right: 16px; }
+
+  .seite-kreis .tafel { flex-direction: column; padding: 0 16px 0; gap: 0; }
+  .seite-kreis .verlauf {
+    width: auto; flex: 1; background: none; border: none; border-radius: 0;
+    padding: 14px 0 0; border-top: 1px solid var(--rand-leise);
+  }
+  .verlauf-kopf { display: none; }
+  .verlauf-schleier { background: linear-gradient(var(--grund), rgba(20, 17, 15, 0)); }
+  .stift { background: var(--grund); }
+  .kreisspalte { flex: 1; justify-content: center; gap: 14px; }
+
+  /* Kreisansicht: der Ring füllt die Seite, die Steuerung sitzt darunter. */
+  body.ansicht-kreis .verlauf { display: none; }
+  /* Textansicht: der Verlauf füllt die Seite, die Steuerung steht im Fuß. */
+  body.ansicht-text .ring { display: none; }
+  body.ansicht-text .kreisspalte {
+    flex: none; order: 2; margin: 0 -16px; padding: 10px 16px 18px;
+    border-top: 1px solid var(--rand-leise); background: var(--flaeche-fuss);
+  }
+  body.ansicht-text .verlauf { order: 1; }
+  .rec-griff { bottom: 22px; left: 6px; }
+  .seite-kreis .status { left: 56px; bottom: 28px; }
+}
+
+/* ======================================================================
+   Archiv
+   ====================================================================== */
 .tafel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 1rem; min-height: 0; }
-
+.kopf { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.kopf-links { display: flex; align-items: baseline; gap: 0.6rem; }
+.modell { color: var(--gedimmt); font-size: 0.7rem; }
 .buehne {
   display: flex; flex-direction: column; gap: 1.2rem; min-height: 0;
   background: var(--flaeche); border: 1px solid var(--rand); border-radius: 16px; padding: 1.6rem 1.8rem;
@@ -127,49 +371,16 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .buehne-kopf { display: flex; align-items: center; gap: 1rem; }
 .sprecher { font-size: 1.35rem; font-weight: 600; color: var(--akzent); }
 .sprecher.still { color: var(--gedimmt); font-weight: 400; }
-.uhr { color: var(--gedimmt); font-variant-numeric: tabular-nums; font-size: 0.95rem; transition: color 0.4s; }
-.uhr.bald { color: var(--akzent); }
-.uhr.ueber { color: var(--zu-lang); font-weight: 600; }
-
-/* Redezeit überschritten: die Bühne bekommt einen ruhigen, klaren Rand. */
-.zeit-um .buehne { border-color: var(--zu-lang); box-shadow: 0 0 0 1px var(--zu-lang) inset; }
-.zeit-um .sprecher { color: var(--zu-lang); }
-.pegel { margin-left: auto; width: 90px; height: 5px; border-radius: 3px; background: var(--rand); overflow: hidden; }
-.pegel i { display: block; height: 100%; width: 0; background: var(--akzent); transition: width 90ms linear; }
-.live { flex: 1; margin: 0; overflow-y: auto; font-size: clamp(1.4rem, 2.4vw, 2.2rem); line-height: 1.45; }
-.live .offen { color: var(--gedimmt); }
-
+.uhr { color: var(--gedimmt); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 .verlauf {
   display: flex; flex-direction: column; gap: 0.9rem; min-height: 0;
   background: var(--flaeche); border: 1px solid var(--rand); border-radius: 16px; padding: 1.3rem 1.4rem;
 }
 .verlauf ol { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1.1rem; }
 .verlauf li { display: flex; flex-direction: column; gap: 0.25rem; }
-.eintrag-kopf { display: flex; align-items: baseline; gap: 0.5rem; }
-.wer { color: var(--akzent); font-weight: 600; font-size: 0.9rem; }
-.wann { color: var(--gedimmt); font-size: 0.75rem; }
-.weg { opacity: 0; margin-left: auto; background: none; border: none; color: var(--gedimmt); padding: 0 0.3rem; line-height: 1; }
-.verlauf li:hover .weg { opacity: 1; }
 .was { color: var(--text); font-size: 0.95rem; outline: none; border-radius: 6px; }
 .was:focus { box-shadow: 0 0 0 2px var(--akzent-weich); }
 
-.fuss { display: flex; align-items: center; gap: 1rem; }
-.datei { color: var(--gedimmt); font-size: 0.75rem; }
-#aufnahme-hinweis { margin-left: auto; }
-.ohne-text #aufnahme-hinweis { margin-left: auto; }
-
-/* --- Ablenkungsfrei: nur, wer dran ist --- */
-.ohne-text .live,
-.ohne-text .verlauf,
-.ohne-text .datei { display: none; }
-.ohne-text .tafel { grid-template-columns: minmax(0, 1fr); }
-.ohne-text .buehne { align-items: center; justify-content: center; text-align: center; }
-.ohne-text .buehne-kopf { flex-direction: column; gap: 1.2rem; }
-.ohne-text .sprecher { font-size: clamp(3rem, 11vw, 8rem); line-height: 1.05; }
-.ohne-text .uhr { font-size: clamp(1.6rem, 4vw, 3rem); }
-.ohne-text .pegel { margin: 0; width: 160px; height: 6px; }
-
-/* --- Archiv --- */
 .seite-archiv { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1rem; padding: 1rem 1.5rem 1.5rem; }
 .seite-archiv .tafel { grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); }
 .seite-archiv .verlauf ol { gap: 0.4rem; }
@@ -181,7 +392,6 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .gelesen .was { font-size: 1rem; line-height: 1.6; margin: 0.2rem 0 0; }
 #laden { margin-left: auto; }
 
-/* --- Archiv: Werkzeuge, Editor, Verlauf --- */
 .werkzeuge { display: flex; gap: 0.35rem; margin-left: auto; flex-wrap: wrap; }
 .bearbeitet {
   font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase;
@@ -193,12 +403,12 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .werkstatt { display: flex; flex-direction: column; gap: 0.8rem; min-height: 0; flex: 1; }
 .hinweis-text { color: var(--gedimmt); font-size: 0.85rem; line-height: 1.55; margin: 0; }
 .hinweis-text code {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: var(--schrift-mono);
   font-size: 0.92em; background: var(--flaeche-hoch); padding: 0.1em 0.35em; border-radius: 4px;
 }
 #editor {
   flex: 1; min-height: 22rem; resize: none;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: var(--schrift-mono);
   font-size: 0.92rem; line-height: 1.65;
   padding: 1rem 1.1rem; border-radius: 12px;
   border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--text);
@@ -207,7 +417,6 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 #editor:focus { outline: none; border-color: var(--akzent); }
 .werkstatt-fuss { display: flex; align-items: center; gap: 0.9rem; }
 
-/* Der Verlauf bekommt die ganze Bühne, so wie der Editor auch. */
 .verlauf-blatt { display: flex; flex-direction: column; gap: 1rem; min-height: 0; flex: 1; }
 .verlauf-blatt ol {
   list-style: none; margin: 0; padding: 0; overflow-y: auto;
@@ -226,16 +435,5 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 
 @media (max-width: 900px) {
   .karte { grid-template-columns: 1fr; }
-  .seite-kreis { height: auto; min-height: 100vh; }
-  .tafel { grid-template-columns: 1fr; }
-}
-
-/* Telefon: Der Kopf steht in Zeilen untereinander, die Bühne bekommt den Platz. */
-@media (max-width: 560px) {
-  .seite-kreis { padding: 0.75rem 0.9rem 1rem; gap: 0.75rem; }
-  .kopf { gap: 0.6rem; }
-  .kopf-rechts { margin-left: 0; }
-  .buehne { padding: 1.1rem 1.2rem; }
-  .live { font-size: clamp(1.1rem, 5.5vw, 1.6rem); }
-  .fuss { flex-wrap: wrap; }
+  .seite-archiv .tafel { grid-template-columns: 1fr; }
 }

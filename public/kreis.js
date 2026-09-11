@@ -1,4 +1,5 @@
-// Die laufende Runde: links, was gerade gesagt wird — rechts, was schon steht.
+// Die laufende Runde: der Kreis mit den Plätzen, darunter die Steuerung —
+// und daneben der Verlauf, in dem der laufende Beitrag schon mitwächst.
 import { verbinden, sende, sendeTon, offen } from "./verbindung.js";
 
 const $ = (id) => document.getElementById(id);
@@ -53,12 +54,10 @@ async function mikroOeffnen() {
   await ctx.audioWorklet.addModule("pcm-worklet.js");
   const knoten = new AudioWorkletNode(ctx, "pcm-worklet");
   knoten.port.onmessage = ({ data }) => {
-    // Der Pegel zappelt immer — so sieht man, dass das Mikrofon arbeitet, auch
-    // wenn dieses Gerät gerade nichts schickt.
-    pegelZeigen(data.pegel);
     // Gesendet wird nur vom Gerät dessen, der dran ist. Dann aber durchgehend:
     // Der Server hält die letzten Sekunden vor, damit der Anfang eines Beitrags
-    // auch dann steht, wenn die Übergabe einen Moment später kommt.
+    // auch dann steht, wenn die Übergabe einen Moment später kommt. Wie laut es
+    // ist, sagt der Server allen zurück — daran atmet der Platz des Sprechers.
     if (offen() && ichNehmeAuf()) sendeTon(data.pcm.buffer);
   };
   ctx.createMediaStreamSource(spur).connect(knoten);
@@ -72,8 +71,6 @@ function mikroSchliessen() {
   audio.spur.getTracks().forEach((t) => t.stop());
   audio.ctx.close();
   audio = null;
-  pegelZiel = 0;
-  pegelZeigen(0);
 }
 
 let mikroLaeuft = false; // ein Aufbau zur Zeit, sonst öffnen sich zwei Ströme
@@ -123,12 +120,6 @@ function gong() {
   }
 }
 
-let pegelZiel = 0;
-function pegelZeigen(rms) {
-  pegelZiel = Math.max(pegelZiel * 0.75, Math.min(1, rms * 6));
-  $("pegel").firstElementChild.style.width = `${pegelZiel * 100}%`;
-}
-
 // --- Kreislogik ----------------------------------------------------------
 
 const kreis = () => state?.teilnehmende ?? [];
@@ -138,6 +129,9 @@ const kreis = () => state?.teilnehmende ?? [];
 const weitergeben = () => sende({ typ: "weiter" });
 const anPerson = (id) => sende({ typ: "dran", id });
 const beenden = () => sende({ typ: "stop" });
+// Anhalten ist kein Beenden: Der Beitrag bleibt offen, nur Aufnahme und Uhr
+// stehen still.
+const anhalten = () => sende({ typ: state?.angehalten ? "fortsetzen" : "pause" });
 
 // --- Beitreten -----------------------------------------------------------
 
@@ -174,80 +168,195 @@ function verlassen(id) {
 }
 
 // Solange von diesem Gerät niemand im Kreis sitzt, steht das Namensfeld offen;
-// danach reicht ein Knopf für den Nächsten, der sich dazusetzt.
-function zeichneBeitritt(offen = meineIds.size === 0) {
-  $("beitritt").hidden = !offen;
-  $("noch-jemand").hidden = offen || meineIds.size === 0;
+// danach reicht ein leiser Knopf für den Nächsten, der sich dazusetzt. Beides
+// gleichzeitig gibt es nie.
+function zeichneBeitritt(feldOffen = meineIds.size === 0) {
+  $("beitritt").hidden = !feldOffen;
+  $("noch-jemand").hidden = feldOffen || meineIds.size === 0;
+  $("beitritt-ab").hidden = meineIds.size === 0;
 }
 
 // --- Darstellung ---------------------------------------------------------
 
 function zeichnen() {
   $("kopf-titel").textContent = state.titel;
-  $("modell").textContent = state.bereit ? state.modell : "Modell lädt …";
-  // Nichts geht verloren: die Datei wird während des Sprechens fortgeschrieben.
-  $("datei").textContent = `sichert laufend nach ${state.datei}`;
-  zeichneRunde();
+  document.title = `${state.titel} · Redekreis`;
+  zeichneRing();
   zeichneVerlauf();
-  zeichneLive();
+  zeichneSteuerung();
+  uhrStellen();
 }
 
-function zeichneRunde() {
+// --- Der Ring -------------------------------------------------------------
+//
+// Leere Mitte, Plätze auf der Bahn, dahinter der Schweif des Sprechers. Die
+// Maße richten sich nach dem Platz, den die Kreisspalte übrig lässt.
+
+const platzNodes = new Map(); // id → Element, damit das Ziehen nicht neu baut
+let masse = null; // die zuletzt gerechnete Ringgeometrie
+
+function ringMasse() {
+  const spalte = document.querySelector(".kreisspalte");
+  const steuerung = document.querySelector(".steuerung");
+  const breite = spalte.clientWidth;
+  const hoehe = spalte.clientHeight - steuerung.offsetHeight - 18;
+  const n = Math.max(kreis().length, 1);
+  const S = Math.max(200, Math.min(breite, hoehe, 620));
+  // Der Platz darf nicht größer werden, als der Abstand auf der Bahn zulässt.
+  // Am Telefon darf der Platz nicht unter Fingergröße fallen, am Beamer nicht
+  // ins Riesige wachsen.
+  const grob = Math.max(44, Math.min(76, S * 0.115));
+  const abstand = (2 * Math.PI * ((S - grob - 26) / 2)) / n;
+  const av = Math.max(30, Math.min(grob, abstand * 0.72));
+  return { S, av, R: (S - av - 26) / 2, n, abstand };
+}
+
+function zeichneRing() {
   if (ziehtGerade) return; // mitten im Ziehen würde ein Neuaufbau den Griff abreißen
+  const ring = $("runde");
+  const leute = kreis();
+  masse = ringMasse();
+  const { S, av } = masse;
+  ring.style.width = `${S}px`;
+  ring.style.height = `${S}px`;
+
   const gesprochen = new Set(state.beitraege.map((b) => b.sprecher));
-  $("runde").replaceChildren(
-    ...kreis().map((t) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = t.name;
-      if (state.dran === t.id) b.classList.add("dran");
-      else if (gesprochen.has(t.name)) b.classList.add("war");
-      if (!t.da) b.classList.add("weg"); // Gerät zu, sitzt aber noch im Kreis
-      if (meineIds.has(t.id)) b.classList.add("ich");
-      b.title = t.da ? "Das Mikrofon hierher geben" : `${t.name} ist gerade nicht verbunden`;
-      // Zeiger werden oben behandelt; hier bleibt der Weg über die Tastatur.
-      // Ein Klick kurz nach dem Loslassen gehört zu dieser Geste und ist schon
-      // erledigt — sonst käme nach einem Ziehen noch eine Übergabe hinterher.
-      b.onclick = () => Date.now() - zuletztZeiger > 300 && anPerson(t.id);
+  platzNodes.clear();
+  const stuecke = [bahn(masse)];
 
-      const chip = document.createElement("span");
-      chip.className = "chip";
-      chip.dataset.id = t.id;
-      chip.append(b);
+  for (const t of leute) {
+    const platz = document.createElement("div");
+    platz.className = "platz";
+    platz.dataset.id = t.id;
+    if (state.dran === t.id) platz.classList.add("dran");
+    else if (gesprochen.has(t.name)) platz.classList.add("war");
+    if (!t.da) platz.classList.add("weg");
+    if (meineIds.has(t.id)) platz.classList.add("ich");
+    platz.style.width = `${Math.round(Math.min(masse.abstand * 0.95, av * 1.8))}px`;
+    platz.title = t.da ? "Den Redestab hierher geben" : `${t.name} ist gerade nicht verbunden`;
 
-      // Nur für die eigenen Leute: Wer hier sitzt, kann auch wieder aufstehen.
-      if (meineIds.has(t.id)) {
-        const weg = document.createElement("button");
-        weg.type = "button";
-        weg.className = "chip-weg";
-        weg.textContent = "×";
-        weg.title = `${t.name} verlässt den Kreis`;
-        weg.onclick = () => verlassen(t.id);
-        chip.append(weg);
-      }
-      chip.addEventListener("pointerdown", ziehenBeginnen);
-      // Langes Drücken öffnet in Android Chrome sonst das Auswahlmenü.
-      chip.addEventListener("contextmenu", (e) => e.preventDefault());
-      return chip;
-    }),
-  );
+    const av_ = document.createElement("span");
+    av_.className = "av";
+    av_.style.width = av_.style.height = `${Math.round(av)}px`;
+    av_.style.fontSize = `${Math.round(av * 0.34)}px`;
+    av_.textContent = [...t.name][0] ?? "?";
+    if (meineIds.has(t.id)) av_.append(Object.assign(document.createElement("i"), { className: "punkt" }));
+
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.style.fontSize = `${Math.max(11, Math.min(19, Math.round(av * 0.24)))}px`;
+    nm.textContent = t.name;
+
+    platz.append(av_, nm);
+    if (!t.da) platz.append(Object.assign(document.createElement("span"), { className: "weg-hinweis", textContent: "nicht da" }));
+
+    // Nur für die eigenen Leute: Wer hier sitzt, kann auch wieder aufstehen.
+    if (meineIds.has(t.id)) {
+      const weg = document.createElement("button");
+      weg.type = "button";
+      weg.className = "platz-weg";
+      weg.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      weg.title = `${t.name} verlässt den Kreis`;
+      weg.onclick = (e) => (e.stopPropagation(), verlassen(t.id));
+      platz.append(weg);
+    }
+    platz.addEventListener("pointerdown", ziehenBeginnen);
+    // Langes Drücken öffnet in Android Chrome sonst das Auswahlmenü.
+    platz.addEventListener("contextmenu", (e) => e.preventDefault());
+    platzNodes.set(t.id, platz);
+    stuecke.push(platz);
+  }
+
+  ring.replaceChildren(...stuecke);
+  stelleAuf(leute.map((t) => t.id));
+  pulsSetzen();
+}
+
+// Die Bahn selbst: ein Pixel, zwölf Prozent — mehr braucht der Kreis nicht.
+function bahn({ S, R }) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ring-bahn");
+  svg.setAttribute("viewBox", `0 0 ${S} ${S}`);
+  svg.setAttribute("aria-hidden", "true");
+  const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  c.setAttribute("cx", S / 2);
+  c.setAttribute("cy", S / 2);
+  c.setAttribute("r", R.toFixed(1));
+  c.setAttribute("fill", "none");
+  c.setAttribute("stroke", "#f2ece6");
+  c.setAttribute("stroke-opacity", "0.12");
+  c.setAttribute("stroke-width", "1");
+  svg.append(c);
+  return svg;
+}
+
+// Setzt die Plätze einer Reihenfolge auf die Bahn. Beim Ziehen ist das eine
+// vorläufige Reihe — der gezogene Platz hängt am Zeiger, seine Lücke steht auf
+// der Bahn.
+function stelleAuf(ordnung, gezogen = null, zeiger = null) {
+  if (!masse) return;
+  const { S, R } = masse;
+  const c = S / 2;
+  const n = Math.max(ordnung.length, 1);
+  ordnung.forEach((id, i) => {
+    const platz = platzNodes.get(id);
+    if (!platz) return;
+    const a = ((360 / n) * i * Math.PI) / 180;
+    const x = c + R * Math.sin(a);
+    const y = c - R * Math.cos(a);
+    if (id === gezogen) {
+      const kasten = $("runde").getBoundingClientRect();
+      platz.style.left = `${zeiger.x - kasten.left}px`;
+      platz.style.top = `${zeiger.y - kasten.top}px`;
+      luecke(x, y);
+      return;
+    }
+    platz.style.left = `${x.toFixed(1)}px`;
+    platz.style.top = `${y.toFixed(1)}px`;
+  });
+}
+
+// Die gestrichelte Lücke zeigt, wo der gezogene Platz landet.
+let lueckeNode = null;
+function luecke(x, y) {
+  if (!lueckeNode) {
+    lueckeNode = document.createElement("div");
+    lueckeNode.className = "luecke";
+    $("runde").append(lueckeNode);
+  }
+  const gr = Math.round(masse.av);
+  lueckeNode.style.width = lueckeNode.style.height = `${gr}px`;
+  lueckeNode.style.left = `${x.toFixed(1)}px`;
+  lueckeNode.style.top = `${(y - gr * 0.2).toFixed(1)}px`;
 }
 
 // --- Reihenfolge ziehen ---------------------------------------------------
 //
 // Mit Zeigern statt HTML5-Ziehen: Telefone kennen `dragstart` nicht, und sie
 // sind der Hauptfall. Erst ab einer Schwelle gilt es als Ziehen — darunter
-// bleibt es ein Klick, der das Mikrofon weitergibt.
+// bleibt es ein Antippen, das den Redestab weitergibt.
 const ZIEH_SCHWELLE = 6; // px
 let ziehtGerade = false;
-let zuletztZeiger = 0; // wann der Zeiger zuletzt losgelassen hat
+
+// Welcher Platz auf der Bahn liegt dem Zeiger am nächsten? Der Winkel
+// entscheidet, nicht die Entfernung: So lässt sich auch weit außen ziehen.
+function slotBei(x, y, n) {
+  const kasten = $("runde").getBoundingClientRect();
+  const cx = kasten.left + kasten.width / 2;
+  const cy = kasten.top + kasten.height / 2;
+  let grad = (Math.atan2(x - cx, -(y - cy)) * 180) / Math.PI;
+  if (grad < 0) grad += 360;
+  return Math.min(n - 1, Math.round(grad / (360 / n)) % n);
+}
 
 function ziehenBeginnen(ev) {
-  if (ev.target.closest(".chip-weg")) return; // das × ist kein Griff
+  if (ev.target.closest(".platz-weg")) return; // das × ist kein Griff
   if (ev.pointerType === "mouse" && ev.button !== 0) return;
-  const chip = ev.currentTarget;
+  const platz = ev.currentTarget;
+  const id = platz.dataset.id;
   const start = { x: ev.clientX, y: ev.clientY };
-  let luecke = null;
+  const reihe = kreis().map((t) => t.id);
+  let ordnung = null;
 
   // Am Finger fängt der Browser sonst beim längeren Drücken an, Text zu
   // markieren oder sein eigenes Menü zu öffnen — und nimmt die Geste mit
@@ -258,37 +367,29 @@ function ziehenBeginnen(ev) {
     if (!ziehtGerade) {
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < ZIEH_SCHWELLE) return;
       ziehtGerade = true;
-      // Erst jetzt den Zeiger einfangen, nicht schon beim Aufsetzen: Ein
-      // gefangener Zeiger schickt auch den Klick an den Chip statt an den
-      // Namensknopf darin — dann gäbe ein einfacher Klick das Mikrofon nicht
-      // mehr weiter.
+      // Erst jetzt den Zeiger einfangen, nicht schon beim Aufsetzen: sonst
+      // ginge auch das einfache Antippen durch die Ziehgeste verloren.
       try {
-        chip.setPointerCapture(e.pointerId);
+        platz.setPointerCapture(e.pointerId);
       } catch {
         // Kennt der Browser den Zeiger nicht mehr, reichen die Listener am
         // Dokument — das Ziehen läuft weiter.
       }
-      chip.classList.add("zieht");
-      // Die Lücke zeigt, wo der Chip landet. Sie wandert, der Chip selbst
-      // bleibt liegen: Ein Umhängen des gezogenen Knotens nähme ihm den
-      // Zeiger-Griff, und das Ziehen bräche nach dem ersten Schritt ab.
-      luecke = document.createElement("span");
-      luecke.className = "chip-luecke";
-      chip.parentElement.insertBefore(luecke, chip);
+      platz.classList.add("zieht");
     }
-    const ziel = chipUnter(e.clientX, e.clientY, chip);
-    if (!ziel || ziel === chip) return;
-    const mitte = ziel.getBoundingClientRect().left + ziel.offsetWidth / 2;
-    ziel.parentElement.insertBefore(luecke, e.clientX < mitte ? ziel : ziel.nextSibling);
+    const andere = reihe.filter((x) => x !== id);
+    andere.splice(slotBei(e.clientX, e.clientY, reihe.length), 0, id);
+    ordnung = andere;
+    stelleAuf(ordnung, id, { x: e.clientX, y: e.clientY });
   };
 
   const aufraeumen = () => {
     document.removeEventListener("pointermove", bewegen);
     document.removeEventListener("pointerup", loslassen);
     document.removeEventListener("pointercancel", abbrechen);
-    chip.classList.remove("zieht");
-    luecke?.remove();
-    luecke = null;
+    platz.classList.remove("zieht");
+    lueckeNode?.remove();
+    lueckeNode = null;
     const gezogen = ziehtGerade;
     ziehtGerade = false;
     return gezogen;
@@ -297,159 +398,259 @@ function ziehenBeginnen(ev) {
   // Nimmt der Browser die Geste doch an sich, bleibt die Reihe, wie sie war —
   // hängen bleiben darf der Zug auf keinen Fall.
   const abbrechen = () => {
-    if (aufraeumen()) zeichneRunde();
+    if (aufraeumen()) zeichneRing();
   };
 
   const loslassen = () => {
-    // Die Lücke steht für den gezogenen Chip — daraus wird die neue Reihe.
-    const ids = luecke
-      ? [...$("runde").children]
-          .map((k) => (k === luecke ? chip.dataset.id : k === chip ? null : k.dataset.id))
-          .filter(Boolean)
-      : null;
+    const neu = ordnung;
     const gezogen = aufraeumen();
-    zuletztZeiger = Date.now();
-    // Kurzes Antippen ohne Bewegung reicht das Mikrofon weiter. Das passiert
+    // Kurzes Antippen ohne Bewegung gibt den Redestab weiter. Das passiert
     // hier und nicht im Klick: Am Finger schluckt das `preventDefault` von
     // oben den Klick, der sonst darauf folgen würde.
-    if (!gezogen) return anPerson(chip.dataset.id);
-    if (ids) sende({ typ: "reihenfolge", ids });
+    if (!gezogen) return anPerson(id);
+    if (neu && neu.join() !== reihe.join()) sende({ typ: "reihenfolge", ids: neu });
+    else zeichneRing();
   };
 
-  // Am Dokument, nicht am Chip: Vor dem Einfangen wandert der Zeiger sonst aus
-  // dem Chip heraus und das Ziehen bliebe stecken.
+  // Am Dokument, nicht am Platz: Vor dem Einfangen wandert der Zeiger sonst aus
+  // dem Platz heraus und das Ziehen bliebe stecken.
   document.addEventListener("pointermove", bewegen);
   document.addEventListener("pointerup", loslassen);
   document.addEventListener("pointercancel", abbrechen);
 }
 
-// Der gezogene Chip liegt selbst unter dem Finger — für die Suche nach dem
-// Nachbarn muss er kurz durchsichtig für Zeiger sein.
-function chipUnter(x, y, gezogen) {
-  gezogen.style.pointerEvents = "none";
-  const drunter = document.elementFromPoint(x, y);
-  gezogen.style.pointerEvents = "";
-  return drunter?.closest(".chip") ?? null; // die Lücke ist kein .chip
+// --- Steuerung und Uhr ----------------------------------------------------
+
+function zeichneSteuerung() {
+  const laeuft = Boolean(state.aktiv);
+  const halt = Boolean(state.angehalten);
+  $("beenden").disabled = !laeuft;
+  $("pause").disabled = !laeuft;
+  $("pause").classList.toggle("halt", halt);
+  $("pause").title = halt ? "Fortsetzen — Aufnahme und Uhr laufen weiter" : "Pause — Aufnahme und Uhr anhalten";
+  $("pause").setAttribute("aria-label", halt ? "Fortsetzen" : "Pause");
+  // SVG-Elemente kennen die `hidden`-Eigenschaft nicht — nur das Attribut.
+  $("ikon-pause").toggleAttribute("hidden", halt);
+  $("ikon-play").toggleAttribute("hidden", !halt);
 }
 
-function zeichneLive() {
-  const aktiv = state.aktiv;
-  const live = $("live");
+// Was von der Redezeit verstrichen ist — ohne das, was im Halt verging.
+function verstrichen() {
+  const aktiv = state?.aktiv;
+  if (!aktiv) return 0;
+  const bis = aktiv.haltSeit ? new Date(aktiv.haltSeit).getTime() : Date.now();
+  return Math.max(0, bis - new Date(aktiv.begonnen).getTime() - (aktiv.pauseMs ?? 0));
+}
 
-  if (!aktiv) {
-    $("sprecher").textContent = "Niemand spricht";
-    $("sprecher").className = "sprecher still";
-    $("uhr").textContent = "";
-    $("uhr").className = "uhr";
-    document.body.classList.remove("zeit-um");
-    gongGespielt = false;
+const mmss = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+
+function uhrStellen() {
+  if (!state) return;
+  const strahl = $("zeitstrahl");
+  const grenze = state.redezeitMs;
+
+  if (!state.aktiv) {
     clearInterval(uhrTimer);
     uhrTimer = null;
-    live.replaceChildren(
-      hinweis(
-        kreis().length
-          ? "Leertaste reicht das Mikrofon weiter."
-          : "Noch ist niemand im Kreis — trag oben deinen Namen ein.",
-      ),
-    );
-    zeichneRunde();
+    gongGespielt = false;
+    $("uhr").textContent = "00:00";
+    $("uhr-grenze").textContent = grenze ? mmss(grenze) : "";
+    $("balken").style.width = "0%";
+    strahl.className = "zeitstrahl";
+    document.body.classList.remove("zeit-um");
     return;
   }
 
-  if ($("sprecher").textContent !== aktiv.sprecher || !uhrTimer) gongGespielt = false;
-  $("sprecher").textContent = aktiv.sprecher;
-  $("sprecher").className = "sprecher";
   if (!uhrTimer) uhrTimer = setInterval(uhrStellen, 1000);
-  uhrStellen();
-
-  if (!aktiv.committed && !aktiv.tentative) {
-    live.replaceChildren(hinweis("… hört zu"));
-  } else {
-    const offen = document.createElement("span");
-    offen.className = "offen";
-    offen.textContent = (aktiv.committed && aktiv.tentative ? " " : "") + aktiv.tentative;
-    live.replaceChildren(document.createTextNode(aktiv.committed), offen);
-  }
-  live.scrollTop = live.scrollHeight;
-}
-
-const hinweis = (text) =>
-  Object.assign(document.createElement("span"), { className: "platzhalter", textContent: text });
-
-function uhrStellen() {
-  if (!state.aktiv) return;
-  const ms = Date.now() - new Date(state.aktiv.begonnen);
-  const s = Math.floor(ms / 1000);
-  const uhr = $("uhr");
-  uhr.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-
-  const grenze = state.redezeitMs;
+  const ms = verstrichen();
   const rest = grenze - ms;
+  $("uhr").textContent = mmss(ms);
+  $("uhr-grenze").textContent = !grenze ? "" : rest <= 0 ? `+${mmss(-rest)}` : mmss(grenze);
+  $("balken").style.width = `${grenze ? Math.min(100, (ms / grenze) * 100) : 0}%`;
+
   // Letzte Minute warm, danach deutlich — und einmal ein Gong.
-  uhr.className = !grenze ? "uhr" : rest <= 0 ? "uhr ueber" : rest <= 60_000 ? "uhr bald" : "uhr";
+  strahl.className = state.angehalten
+    ? "zeitstrahl halt"
+    : !grenze
+      ? "zeitstrahl"
+      : rest <= 0
+        ? "zeitstrahl ueber"
+        : rest <= 60_000
+          ? "zeitstrahl bald"
+          : "zeitstrahl";
   document.body.classList.toggle("zeit-um", Boolean(grenze) && rest <= 0);
-  if (grenze && rest <= 0 && !gongGespielt) {
+  if (grenze && rest <= 0 && !gongGespielt && !state.angehalten) {
     gongGespielt = true;
     gong();
   }
 }
 
+// --- Der Platz des Sprechers atmet mit dem Pegel --------------------------
+
+let pegelZiel = 0;
+function pulsSetzen(rms = pegelZiel) {
+  pegelZiel = state?.angehalten ? 0 : Math.max(pegelZiel * 0.55, Math.min(1, rms * 7));
+  const platz = state?.dran ? platzNodes.get(state.dran) : null;
+  const av = platz?.querySelector(".av");
+  if (!av) return;
+  const stufe = pegelZiel;
+  av.style.transform = `scale(${(1 + stufe * 0.09).toFixed(3)})`;
+  av.style.boxShadow =
+    `0 0 0 ${(6 + stufe * 6).toFixed(1)}px rgba(229, 160, 92, ${(0.1 + stufe * 0.03).toFixed(3)}), ` +
+    `0 0 ${(20 + stufe * 16).toFixed(0)}px rgba(229, 160, 92, ${(0.2 + stufe * 0.14).toFixed(3)})`;
+}
+
+// --- Verlauf --------------------------------------------------------------
+
+let karteNode = null; // die Karte des laufenden Beitrags
+
 function zeichneVerlauf() {
   const ol = $("beitraege");
-  if (!state.beitraege.length) {
-    ol.replaceChildren(hinweis("Noch nichts gesagt."));
+  karteNode = null;
+  const stuecke = state.beitraege.map((b, i) => eintrag(b, i));
+  if (state.aktiv) stuecke.push((karteNode = laufendeKarte(state.aktiv)));
+  $("anzahl").textContent = state.beitraege.length === 1 ? "1 Beitrag" : `${state.beitraege.length} Beiträge`;
+  if (!stuecke.length) {
+    ol.replaceChildren(
+      hinweis(
+        kreis().length
+          ? "Noch nichts gesagt — die Leertaste gibt den Redestab weiter."
+          : "Noch ist niemand im Kreis — trag oben deinen Namen ein.",
+      ),
+    );
     return;
   }
-  ol.replaceChildren(
-    ...state.beitraege.map((b, i) => {
-      const li = document.createElement("li");
-
-      const kopf = document.createElement("div");
-      kopf.className = "eintrag-kopf";
-      const wer = document.createElement("span");
-      wer.className = "wer";
-      wer.textContent = b.sprecher;
-      const wann = document.createElement("span");
-      wann.className = "wann";
-      wann.textContent = new Date(b.begonnen).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-      const weg = document.createElement("button");
-      weg.type = "button";
-      weg.className = "weg";
-      weg.title = "Beitrag löschen";
-      weg.textContent = "×";
-      weg.onclick = () => sende({ typ: "loeschen", index: i });
-      kopf.append(wer, wann, weg);
-
-      const was = document.createElement("div");
-      was.className = "was";
-      was.contentEditable = "plaintext-only";
-      was.textContent = b.text;
-      was.onblur = () => {
-        if (was.textContent !== b.text) sende({ typ: "aendern", index: i, text: was.textContent });
-      };
-
-      li.append(kopf, was);
-      return li;
-    }),
-  );
+  ol.replaceChildren(...stuecke);
   ol.scrollTop = ol.scrollHeight;
 }
+
+function kopfzeile(name, zeit) {
+  const kopf = document.createElement("div");
+  kopf.className = "eintrag-kopf";
+  const wer = document.createElement("span");
+  wer.className = "wer";
+  wer.textContent = name;
+  const wann = document.createElement("span");
+  wann.className = "wann";
+  wann.textContent = new Date(zeit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  kopf.append(wer, wann);
+  return kopf;
+}
+
+function eintrag(b, i) {
+  const li = document.createElement("li");
+  const kopf = kopfzeile(b.sprecher, b.begonnen);
+
+  const weg = document.createElement("button");
+  weg.type = "button";
+  weg.className = "weg";
+  weg.title = "Beitrag löschen";
+  weg.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  weg.onclick = () => sende({ typ: "loeschen", index: i });
+  kopf.append(weg);
+
+  const was = document.createElement("p");
+  was.className = "was";
+  was.contentEditable = "plaintext-only";
+  was.textContent = b.text;
+  was.onblur = () => {
+    if (was.textContent !== b.text) sende({ typ: "aendern", index: i, text: was.textContent });
+  };
+
+  li.append(kopf, was);
+  return li;
+}
+
+// Der laufende Beitrag steht in einer gefassten Karte — innen formatiert wie
+// jeder andere Eintrag. Im Halt verliert der Rahmen sein Bernstein.
+function laufendeKarte(aktiv) {
+  const li = document.createElement("li");
+  li.className = "laufend";
+  li.dataset.begonnen = aktiv.begonnen;
+  li.append(kopfzeile(aktiv.sprecher, aktiv.begonnen));
+  karteFuellen(li, aktiv);
+  return li;
+}
+
+function karteFuellen(li, aktiv) {
+  li.classList.toggle("im-halt", Boolean(state.angehalten));
+  const alt = li.querySelector(".was, .tippt");
+  // Solange nichts gesagt ist: drei Punkte, sonst nichts.
+  if (!aktiv.committed && !aktiv.tentative) {
+    if (alt?.classList.contains("tippt")) return;
+    const punkte = document.createElement("span");
+    punkte.className = "tippt";
+    punkte.setAttribute("aria-label", `${aktiv.sprecher} ist dran und sagt noch nichts`);
+    punkte.innerHTML = "<i></i><i></i><i></i>";
+    alt ? alt.replaceWith(punkte) : li.append(punkte);
+    return;
+  }
+  const was = alt?.classList.contains("was") ? alt : document.createElement("p");
+  was.className = "was";
+  const offenerText = document.createElement("span");
+  offenerText.className = "offen";
+  offenerText.textContent = (aktiv.committed && aktiv.tentative ? " " : "") + aktiv.tentative;
+  was.replaceChildren(document.createTextNode(aktiv.committed), offenerText);
+  if (was !== alt) (alt ? alt.replaceWith(was) : li.append(was));
+}
+
+function zeichneLive() {
+  const aktiv = state.aktiv;
+  if (!aktiv || !karteNode || karteNode.dataset.begonnen !== aktiv.begonnen) {
+    zeichneVerlauf();
+  } else {
+    karteFuellen(karteNode, aktiv);
+    const ol = $("beitraege");
+    ol.scrollTop = ol.scrollHeight;
+  }
+  uhrStellen();
+}
+
+const hinweis = (text) =>
+  Object.assign(document.createElement("li"), { className: "platzhalter", textContent: text });
 
 function melden(text, fehler = false) {
   $("status").textContent = text;
   $("status").classList.toggle("fehler", fehler);
 }
 
+// --- Aufnahme: ein Punkt, drei Zustände -----------------------------------
+
+const ichNehmeAuf = () => state?.aufnahmeVon !== null && state?.aufnahmeVon === meineKennung;
+
+function zeichneAufnahme() {
+  const knopf = $("aufnahme");
+  const dort = kreis().filter((t) => t.da && t.geraet === state.aufnahmeVon).map((t) => t.name);
+  const titel = ichNehmeAuf()
+    ? "Dieses Gerät nimmt auf"
+    : state.aufnahmeVon === null
+      ? "Hier aufnehmen"
+      : dort.length
+        ? `Aufnahme bei ${dort.join(", ")} — antippen holt sie her`
+        : "Ein anderes Gerät nimmt auf — antippen holt die Aufnahme her";
+  // Im Halt geht kein Ton hinaus: Der Punkt sagt es leiser.
+  const gedimmt = state.angehalten ? " gedimmt" : "";
+  knopf.className = `rec-griff ${ichNehmeAuf() ? "hier" : state.aufnahmeVon === null ? "" : "fremd"}${gedimmt}`;
+  knopf.title = titel;
+  knopf.setAttribute("aria-label", titel);
+}
+
 // --- Bedienung -----------------------------------------------------------
 
-$("aufnahme").onclick = aufnahmeHolen;
+$("aufnahme").onclick = () => sende({ typ: "aufnehmen" });
 $("weiter").onclick = weitergeben;
-$("pause").onclick = beenden;
+$("beenden").onclick = beenden;
+$("pause").onclick = anhalten;
 $("export").onclick = () => {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   window.open(`/export.md?tz=${encodeURIComponent(zone)}`, "_blank");
+  menueZeigen(false);
 };
 $("neu").onclick = () => {
+  menueZeigen(false);
   if (state.beitraege.length && !confirm(`${state.beitraege.length} Beiträge sind gesichert. Neue Runde beginnen?`)) return;
   sende({ typ: "neueRunde" });
 };
@@ -465,18 +666,71 @@ $("noch-jemand").onclick = () => {
   zeichneBeitritt(true);
   $("beitritt-name").focus();
 };
-// Ablenkungsfrei: nur Sprecher, Uhr und Weitergeben. Mitgeschrieben und
-// gesichert wird weiter, der Text ist nur nicht zu sehen.
+$("beitritt-ab").onclick = () => zeichneBeitritt(false);
+
+// --- Mehr-Menü ------------------------------------------------------------
+
+function menueZeigen(an) {
+  $("menue").hidden = !an;
+  $("mehr").setAttribute("aria-expanded", String(an));
+}
+$("mehr").onclick = (ev) => {
+  ev.stopPropagation();
+  menueZeigen($("menue").hidden);
+};
+document.addEventListener("click", (ev) => {
+  if (!$("menue").hidden && !ev.target.closest("#menue")) menueZeigen(false);
+});
+
+// Ablenkungsfrei: nur der Kreis, kein Verlauf. Mitgeschrieben und gesichert
+// wird weiter, der Text ist nur nicht zu sehen.
 function fokusSetzen(an) {
   document.body.classList.toggle("ohne-text", an);
-  $("fokus").textContent = an ? "Mit Text" : "Nur Sprecher";
-  localStorage.setItem("redekreis.fokus", an ? "1" : "0");
+  $("fokus").firstChild.textContent = an ? "Mit Text" : "Nur Sprecher";
+  try {
+    localStorage.setItem("redekreis.fokus", an ? "1" : "0");
+  } catch {}
+  if (state) zeichneRing();
 }
-$("fokus").onclick = () => fokusSetzen(!document.body.classList.contains("ohne-text"));
-fokusSetzen(localStorage.getItem("redekreis.fokus") === "1");
+$("fokus").onclick = () => {
+  fokusSetzen(!document.body.classList.contains("ohne-text"));
+  menueZeigen(false);
+};
 
-$("vollbild").onclick = () =>
+$("vollbild").onclick = () => {
   document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  menueZeigen(false);
+};
+
+// --- Kreis oder Text: zwei Vollansichten am Telefon -----------------------
+
+function ansichtSetzen(was) {
+  document.body.classList.toggle("ansicht-kreis", was === "kreis");
+  document.body.classList.toggle("ansicht-text", was === "text");
+  $("tab-kreis").setAttribute("aria-selected", String(was === "kreis"));
+  $("tab-text").setAttribute("aria-selected", String(was === "text"));
+  try {
+    localStorage.setItem("redekreis.ansicht", was);
+  } catch {}
+  if (state) zeichneRing();
+}
+$("tab-kreis").onclick = () => ansichtSetzen("kreis");
+$("tab-text").onclick = () => ansichtSetzen("text");
+
+// Wischen quer tut dasselbe wie die Pille.
+let wischStart = null;
+document.querySelector(".tafel").addEventListener("touchstart", (ev) => {
+  wischStart = ev.touches.length === 1 ? { x: ev.touches[0].clientX, y: ev.touches[0].clientY } : null;
+}, { passive: true });
+document.querySelector(".tafel").addEventListener("touchend", (ev) => {
+  if (!wischStart || ziehtGerade) return;
+  const ende = ev.changedTouches[0];
+  const dx = ende.clientX - wischStart.x;
+  const dy = ende.clientY - wischStart.y;
+  wischStart = null;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+  ansichtSetzen(dx < 0 ? "text" : "kreis");
+}, { passive: true });
 
 document.addEventListener("keydown", (ev) => {
   if (ev.target.isContentEditable || ["INPUT", "TEXTAREA"].includes(ev.target.tagName)) return;
@@ -484,36 +738,23 @@ document.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     weitergeben();
   } else if (ev.code === "Escape") {
-    beenden();
+    if (!$("menue").hidden) menueZeigen(false);
+    else beenden();
+  } else if (ev.key === "f") {
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   }
 });
 
-const ichNehmeAuf = () => state?.aufnahmeVon !== null && state?.aufnahmeVon === meineKennung;
+// Ändert sich der Platz — Fenstergröße, Fokus, Vollbild —, wird der Ring neu
+// aufgesetzt.
+new ResizeObserver(() => state && zeichneRing()).observe(document.querySelector(".kreisspalte"));
 
-// Der Rückfall für das eine Mikrofon, das im Kreis herumgereicht wird: Es liegt
-// an einem Gerät, an dem niemand sitzt, der gerade dran ist. Als Anweisung
-// geschrieben, weil der Knopf weiter oben schon darauf zeigt.
-function aufnahmeHolen() {
-  sende({ typ: "aufnehmen" });
-}
-
-function zeichneAufnahme() {
-  const knopf = $("aufnahme");
-  const hinweis = $("aufnahme-hinweis");
-  if (ichNehmeAuf()) {
-    knopf.hidden = true;
-    hinweis.textContent = "dieses Gerät nimmt auf";
-    return;
-  }
-  knopf.hidden = false;
-  knopf.textContent = state.aufnahmeVon === null ? "Hier aufnehmen" : "Aufnahme hierher holen";
-  const dort = kreis().filter((t) => t.da && t.geraet === state.aufnahmeVon).map((t) => t.name);
-  hinweis.textContent =
-    state.aufnahmeVon === null
-      ? "kein Gerät nimmt auf"
-      : dort.length
-        ? `Aufnahme bei ${dort.join(", ")}`
-        : "ein anderes Gerät nimmt auf";
+try {
+  fokusSetzen(localStorage.getItem("redekreis.fokus") === "1");
+  ansichtSetzen(localStorage.getItem("redekreis.ansicht") === "text" ? "text" : "kreis");
+} catch {
+  fokusSetzen(false);
+  ansichtSetzen("kreis");
 }
 
 verbinden(async (m) => {
@@ -525,6 +766,7 @@ verbinden(async (m) => {
   if (m.typ === "beigetreten") return beigetreten(m);
   if (m.typ === "live" && state) {
     state.aktiv = m.aktiv;
+    pulsSetzen(m.pegel ?? 0);
     return zeichneLive();
   }
   if (m.typ !== "state") return;

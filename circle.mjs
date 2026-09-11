@@ -14,6 +14,7 @@ const SICHERN_MS = 3000; // Schreibabstand für den laufenden Beitrag
 const STUMM_MS = 15000; // so lange darf gesprochen werden, ohne dass Text kommt
 const SPRACHE_MIN_MS = 4000; // und so viel davon muss hörbar gesprochen worden sein
 const PEGEL_SCHWELLE = 0.012; // darüber gilt ein Block als Sprache
+const PEGEL_MS = 100; // höchstens zehnmal je Sekunde geht der Pegel hinaus
 const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang fehlt
 // So lange darf jemand weg sein, ohne den Kreis zu verlassen. 45 s reichen für
 // ein Neuladen, den Wechsel zur Einrichtung und zurück oder einen kurzen
@@ -44,6 +45,8 @@ export class Circle {
   #letzteSprache = 0; // wann zuletzt jemand hörbar gesprochen hat
   #spracheSeitText = 0; // wieviel hörbare Sprache seit dem letzten Text kam
   #takt = null; // schreibt den laufenden Beitrag auch dann fort, wenn gerade nichts kommt
+  #haltSeit = null; // seit wann der laufende Beitrag angehalten ist
+  #pegelGesendet = 0; // wann der Pegel zuletzt hinausging
   #queue = Promise.resolve();   // Feeds laufen streng nacheinander
   #wechsel = Promise.resolve();  // Beitragswechsel ebenso
   #onChange;
@@ -59,12 +62,15 @@ export class Circle {
       attContextRight: 13, // 1040 ms Lookahead = beste Genauigkeit
       teilnehmende: [], // { id, name, geraet, da }
       dran: null, // Kennung dessen, der das Mikrofon hat
-      aktiv: null, // { sprecher, begonnen, committed, tentative }
+      aktiv: null, // { sprecher, begonnen, committed, tentative, pauseMs }
+      angehalten: false, // Aufnahme und Uhr stehen, der Beitrag bleibt offen
       beitraege: [],
       modell: null,
       datei: null,
       bereit: false,
     };
+    // Der Pegel des aufnehmenden Geräts — daran atmet der Platz des Sprechers.
+    this.pegelJetzt = 0;
     this.state.datei = dateiName(this.state.id);
   }
 
@@ -112,12 +118,19 @@ export class Circle {
       committed: "",
       tentative: "",
       vorher: "", // Text aus einem vorherigen Strom desselben Beitrags
+      pauseMs: 0, // was im Halt verstrichen ist, zählt nicht zur Redezeit
+      haltSeit: null,
     };
     this.state.aktiv = aktiv;
+    this.state.angehalten = false; // ein neuer Beitrag beginnt im Lauf
+    this.#haltSeit = null;
     this.#letzterText = Date.now();
     this.#spracheSeitText = 0;
     this.#vorrat = this.#vorlauf.splice(0);
     this.#onChange("state");
+    // Ohne geladenes Modell gibt es keinen Erkennungsstrom — der Kreis läuft
+    // trotzdem, nur eben stumm. Das ist der Weg der Tests.
+    if (!this.#session) return;
 
     const stream = await this.#session.stream({
       language: this.state.sprache,
@@ -141,7 +154,18 @@ export class Circle {
   // PCM: Float32Array, 16 kHz mono. Feeds laufen streng nacheinander, weil
   // die Streaming-Session nicht nebenläufig gefüttert werden darf.
   fuettern(pcm) {
-    if (pegel(pcm) > PEGEL_SCHWELLE) {
+    // Im Halt wird nichts mitgeschrieben: Der Ton fällt weg, statt später als
+    // Nachschlag im Beitrag zu landen.
+    if (this.state.angehalten) return;
+    const jetztPegel = pegel(pcm);
+    this.pegelJetzt = jetztPegel;
+    // Alle Geräte sollen den Platz des Sprechers atmen sehen — gedrosselt,
+    // damit aus 8 Blöcken je Sekunde keine Flut wird.
+    if (Date.now() - this.#pegelGesendet >= PEGEL_MS) {
+      this.#pegelGesendet = Date.now();
+      this.#onChange("pegel");
+    }
+    if (jetztPegel > PEGEL_SCHWELLE) {
       this.#letzteSprache = Date.now();
       this.#spracheSeitText += (pcm.length / 16000) * 1000;
     }
@@ -230,6 +254,9 @@ export class Circle {
     await this.#queue.catch(() => {});
     const stream = this.#stream;
     this.state.aktiv = null;
+    this.state.angehalten = false;
+    this.#haltSeit = null;
+    this.pegelJetzt = 0;
     this.#stream = null;
     this.#vorrat = null;
     this.#vorlauf.length = 0;
@@ -256,6 +283,47 @@ export class Circle {
     this.sichern();
     this.#onChange("state");
     return beitrag;
+  }
+
+  // --- Anhalten -----------------------------------------------------------
+  //
+  // Ein Halt ist kein Ende: Der Beitrag bleibt offen, nur Aufnahme und Uhr
+  // stehen still. Wer fortsetzt, redet im selben Beitrag weiter — im Protokoll
+  // ist von der Unterbrechung nichts zu sehen.
+  anhalten() {
+    if (!this.state.aktiv || this.state.angehalten) return false;
+    this.state.angehalten = true;
+    this.#haltSeit = Date.now();
+    this.state.aktiv.haltSeit = new Date(this.#haltSeit).toISOString();
+    this.pegelJetzt = 0;
+    this.sichern();
+    this.#onChange("state");
+    return true;
+  }
+
+  fortsetzen() {
+    if (!this.state.angehalten) return false;
+    const aktiv = this.state.aktiv;
+    if (aktiv) {
+      aktiv.pauseMs = (aktiv.pauseMs ?? 0) + (Date.now() - this.#haltSeit);
+      aktiv.haltSeit = null;
+    }
+    this.state.angehalten = false;
+    this.#haltSeit = null;
+    // Die Stille des Halts ist kein hängender Strom — der Wachhund fängt neu an
+    // zu zählen, sonst setzt er gleich nach dem Fortsetzen den Strom neu auf.
+    this.#letzterText = Date.now();
+    this.#spracheSeitText = 0;
+    this.#onChange("state");
+    return true;
+  }
+
+  // Die Redezeit des laufenden Beitrags, ohne das, was im Halt verstrichen ist.
+  verstricheneMs() {
+    const aktiv = this.state.aktiv;
+    if (!aktiv) return 0;
+    const bis = this.#haltSeit ?? Date.now();
+    return bis - new Date(aktiv.begonnen).getTime() - (aktiv.pauseMs ?? 0);
   }
 
   // --- Bearbeiten ---------------------------------------------------------
@@ -455,7 +523,7 @@ export class Circle {
     if (!hatText && !fs.existsSync(this.#pfad(".json"))) return;
     this.#zuletztGesichert = Date.now();
     fs.mkdirSync(TRANSCRIPTS, { recursive: true });
-    const { aktiv, bereit, teilnehmende, ...rest } = this.state;
+    const { aktiv, bereit, angehalten, teilnehmende, ...rest } = this.state;
     // Der Browser-Schlüssel ist die Platzkarte eines Geräts — er gehört weder
     // ins Protokoll noch auf andere Geräte.
     rest.teilnehmende = teilnehmende.map(({ schluessel, ...wer }) => wer);

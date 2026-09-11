@@ -63,9 +63,13 @@ const zustandMitAufnahme = () => ({
   aufnahmeVon: aufnahmeGeraet(),
 });
 
+// Der Pegel reist mit dem Live-Text: So atmet der Platz des Sprechers auf
+// jedem Gerät im Kreis, nicht nur auf dem, das gerade aufnimmt.
+const live = () => ({ typ: "live", aktiv: circle.state.aktiv, pegel: circle.pegelJetzt });
+
 const circle = new Circle({
   onChange: (art) => {
-    if (art === "live") sendeAllen({ typ: "live", aktiv: circle.state.aktiv });
+    if (art === "live" || art === "pegel") sendeAllen(live());
     else sendeAllen({ typ: "state", state: zustandMitAufnahme() });
   },
 });
@@ -264,6 +268,14 @@ wss.on("connection", (ws) => {
           break;
         case "stop":
           await circle.beitragBeenden();
+          break;
+        // Anhalten ist kein Beenden: Aufnahme und Uhr stehen, der Beitrag
+        // bleibt offen und läuft beim Fortsetzen weiter.
+        case "pause":
+          circle.anhalten();
+          break;
+        case "fortsetzen":
+          circle.fortsetzen();
           break;
         case "aendern":
           circle.beitragAendern(m.index, m);

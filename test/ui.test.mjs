@@ -58,14 +58,28 @@ async function trittBei(seite, name) {
   if (await seite.isHidden("#beitritt")) await seite.click("#noch-jemand");
   await seite.fill("#beitritt-name", name);
   await seite.click("#beitritt button[type=submit]");
-  await seite.waitForFunction((n) => [...document.querySelectorAll("#runde button")].some((b) => b.textContent === n), name, {
+  await seite.waitForFunction((n) => [...document.querySelectorAll("#runde .platz .nm")].some((b) => b.textContent === n), name, {
     timeout: 8000,
   });
 }
 
-const dran = (seite) => seite.evaluate(() => document.querySelector("#runde button.dran")?.textContent ?? null);
-const fuss = async (seite) => (await seite.textContent("#aufnahme-hinweis")).trim();
-const namen = (seite) => seite.$$eval("#runde .chip > button:first-child", (ns) => ns.map((n) => n.textContent));
+const dran = (seite) => seite.evaluate(() => document.querySelector("#runde .platz.dran .nm")?.textContent ?? null);
+// Der Aufnahmezustand steht nur noch am Punkt unten links: Klasse und Titel.
+const aufnahme = (seite) =>
+  seite.evaluate(() => ({
+    zustand: document.getElementById("aufnahme").classList.contains("hier")
+      ? "hier"
+      : document.getElementById("aufnahme").classList.contains("fremd")
+        ? "fremd"
+        : "niemand",
+    titel: document.getElementById("aufnahme").title,
+  }));
+const namen = (seite) => seite.$$eval("#runde .platz .nm", (ns) => ns.map((n) => n.textContent));
+// Die Mitte eines Platzes auf dem Ring — dorthin zieht die Maus, dorthin tippt der Finger.
+const platzMitte = async (seite, name) => {
+  const kasten = await seite.locator("#runde .platz", { hasText: name }).first().boundingBox();
+  return { x: kasten.x + kasten.width / 2, y: kasten.y + 24 };
+};
 
 // Leertaste auf der Seite selbst, nicht in einem Eingabefeld.
 async function leertaste(seite) {
@@ -84,27 +98,27 @@ test("Die Leertaste reicht das Mikrofon auf das andere Gerät weiter", async (t)
   const b = await geraet(browser, PORT);
   await trittBei(a.seite, "Anton");
   await trittBei(b.seite, "Eva");
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 2);
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 2);
 
   await leertaste(a.seite);
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton");
-  await b.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton");
-  assert.equal(await fuss(a.seite), "dieses Gerät nimmt auf");
-  assert.equal(await fuss(b.seite), "Aufnahme bei Anton");
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Anton");
+  await b.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Anton");
+  assert.equal((await aufnahme(a.seite)).zustand, "hier");
+  assert.match((await aufnahme(b.seite)).titel, /Aufnahme bei Anton/);
 
   // Und jetzt der Fall, um den es geht: Die Aufnahme muss zu Eva wandern.
   await leertaste(a.seite);
-  await b.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+  await b.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Eva", null, {
     timeout: 8000,
   });
   assert.equal(await dran(a.seite), "Eva", "das Mikrofon ist auf Gerät A hängen geblieben");
-  assert.equal(await fuss(b.seite), "dieses Gerät nimmt auf", "die Aufnahme ist nicht mitgewandert");
-  assert.equal(await fuss(a.seite), "Aufnahme bei Eva");
+  assert.equal((await aufnahme(b.seite)).zustand, "hier", "die Aufnahme ist nicht mitgewandert");
+  assert.match((await aufnahme(a.seite)).titel, /Aufnahme bei Eva/);
 
   // Und wieder zurück.
   await leertaste(a.seite);
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton");
-  assert.equal(await fuss(a.seite), "dieses Gerät nimmt auf");
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Anton");
+  assert.equal((await aufnahme(a.seite)).zustand, "hier");
 });
 
 test("Ein zweiter Tab nimmt niemandem den Platz im Kreis", async (t) => {
@@ -124,23 +138,23 @@ test("Ein zweiter Tab nimmt niemandem den Platz im Kreis", async (t) => {
   const zweiterTab = await b.ctx.newPage();
   await zweiterTab.goto(`http://127.0.0.1:${PORT + 1}/`, { waitUntil: "networkidle" });
   // Das × steht nur an den eigenen Leuten: Der zweite Tab hat Eva als seine erkannt.
-  await zweiterTab.waitForFunction(() => document.querySelectorAll("#runde .chip-weg").length === 1);
+  await zweiterTab.waitForFunction(() => document.querySelectorAll("#runde .platz-weg").length === 1);
   await b.seite.close();
   await a.seite.waitForTimeout(800);
 
   assert.deepEqual(await namen(a.seite), ["Anton", "Eva"], "Eva steht doppelt oder gar nicht im Kreis");
   assert.equal(
-    await a.seite.evaluate(() => document.querySelectorAll("#runde button.weg").length),
+    await a.seite.evaluate(() => document.querySelectorAll("#runde .platz.weg").length),
     0,
     "Eva gilt als abwesend, obwohl ihr zweiter Tab offen ist",
   );
 
   await leertaste(a.seite);
   await leertaste(a.seite);
-  await zweiterTab.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+  await zweiterTab.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Eva", null, {
     timeout: 8000,
   });
-  assert.equal(await fuss(zweiterTab), "dieses Gerät nimmt auf", "die Aufnahme kam nicht beim zweiten Tab an");
+  assert.equal((await aufnahme(zweiterTab)).zustand, "hier", "die Aufnahme kam nicht beim zweiten Tab an");
 });
 
 test("Wer geht, verlässt den Kreis — von Hand sofort, nach einer Trennung mit Karenz", async (t) => {
@@ -155,22 +169,22 @@ test("Wer geht, verlässt den Kreis — von Hand sofort, nach einer Trennung mit
   await trittBei(a.seite, "Anton");
   await trittBei(a.seite, "Timo"); // zwei Menschen an einem Gerät
   await trittBei(b.seite, "Eva");
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 3);
 
   // Gerät B geht zu: Eva bleibt zunächst gedimmt stehen …
   await b.ctx.close();
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.weg") !== null, null, { timeout: 8000 });
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.weg") !== null, null, { timeout: 8000 });
   assert.deepEqual(await namen(a.seite), ["Anton", "Timo", "Eva"]);
 
   // … und ist nach der Karenzzeit aus dem Kreis.
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 2, null, {
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 2, null, {
     timeout: 15_000,
   });
   assert.deepEqual(await namen(a.seite), ["Anton", "Timo"], "Eva steht weiter im Kreis");
 
   // Von Hand geht es sofort — und der Name ist auch nach dem Neuladen weg.
-  await a.seite.click("#runde .chip:nth-child(2) .chip-weg");
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 1);
+  await a.seite.locator("#runde .platz", { hasText: "Timo" }).first().locator(".platz-weg").click();
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 1);
   assert.deepEqual(await namen(a.seite), ["Anton"]);
   await a.seite.reload({ waitUntil: "networkidle" });
   await a.seite.waitForTimeout(1200);
@@ -190,42 +204,40 @@ test("Die Reihenfolge im Kreis lässt sich ziehen — und alle sehen sie", async
   await trittBei(a.seite, "Timo");
   await trittBei(b.seite, "Eva");
   for (const s of [a.seite, b.seite]) {
-    await s.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
+    await s.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 3);
   }
   assert.deepEqual(await namen(a.seite), ["Anton", "Timo", "Eva"]);
 
-  // Anton hinter Eva ziehen: Maus auf seinen Chip, halten, nach rechts. Die
-  // Ziel-Koordinate wird unterwegs neu gemessen — sobald die Lücke aufgeht,
-  // rutschen die Chips weiter nach rechts.
-  const kasten = (seite, name) => seite.locator("#runde .chip", { hasText: name }).first().boundingBox();
-  const anton = await kasten(a.seite, "Anton");
-  const mitte = anton.y + anton.height / 2;
-  await a.seite.mouse.move(anton.x + anton.width / 2, mitte);
+  // Anton auf Evas Platz ziehen: Maus auf seinen Platz, halten, hinüber. Der
+  // Platz, über dem der Zeiger steht, ist das Ziel — Anton übernimmt ihn, die
+  // anderen rutschen nach.
+  const anton = await platzMitte(a.seite, "Anton");
+  const eva = await platzMitte(a.seite, "Eva");
+  await a.seite.mouse.move(anton.x, anton.y);
   await a.seite.mouse.down();
-  for (let i = 0; i < 4; i++) {
-    const eva = await kasten(a.seite, "Eva");
-    await a.seite.mouse.move(eva.x + eva.width - 6, mitte, { steps: 4 });
-  }
+  await a.seite.mouse.move(anton.x + 20, anton.y + 20, { steps: 3 });
+  await a.seite.mouse.move(eva.x, eva.y, { steps: 8 });
   await a.seite.mouse.up();
 
   const zuletztAnton = () =>
-    [...document.querySelectorAll("#runde .chip")].map((c) => c.textContent.replace("×", ""))[2] === "Anton";
+    [...document.querySelectorAll("#runde .platz .nm")].map((c) => c.textContent)[2] === "Anton";
   for (const seite of [b.seite, a.seite]) await seite.waitForFunction(zuletztAnton, null, { timeout: 8000 });
   assert.deepEqual(await namen(a.seite), ["Timo", "Eva", "Anton"], "das ziehende Gerät zeigt die alte Reihe");
   assert.deepEqual(await namen(b.seite), ["Timo", "Eva", "Anton"], "das andere Gerät hat die neue Reihe nicht bekommen");
 
   // Und das Weiterreichen folgt der neuen Reihe: nach Timo kommt Eva.
   await leertaste(a.seite);
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Timo");
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Timo");
   await leertaste(a.seite);
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Eva", null, {
     timeout: 8000,
   });
 
-  // Ein Klick ohne Ziehen gibt weiterhin das Mikrofon weiter (auf den Namen,
+  // Ein Klick ohne Ziehen gibt weiterhin den Redestab weiter (auf den Platz,
   // nicht auf das × daneben).
-  await a.seite.locator("#runde .chip", { hasText: "Anton" }).first().locator("button").first().click();
-  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton", null, {
+  const antonJetzt = await platzMitte(a.seite, "Anton");
+  await a.seite.mouse.click(antonJetzt.x, antonJetzt.y);
+  await a.seite.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Anton", null, {
     timeout: 8000,
   });
 });
@@ -251,7 +263,7 @@ test("Am Telefon zieht der Finger den Chip, statt den Namen zu markieren", async
   await trittBei(telefon, "Anton");
   await trittBei(telefon, "Timo");
   await trittBei(zweites.seite, "Eva");
-  await telefon.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
+  await telefon.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 3);
   assert.deepEqual(await namen(telefon), ["Anton", "Timo", "Eva"]);
 
   // Echte Berührungen, nicht nachgebaute Ereignisse: nur so verhält sich der
@@ -263,22 +275,26 @@ test("Am Telefon zieht der Finger den Chip, statt den Namen zu markieren", async
       touchPoints: type === "touchEnd" ? [] : [{ x, y, radiusX: 12, radiusY: 12, force: 1, id: 1 }],
     });
 
-  const kasten = (name) => telefon.locator("#runde .chip", { hasText: name }).first().boundingBox();
-  const anton = await kasten("Anton");
-  await finger("touchStart", anton.x + anton.width / 2, anton.y + anton.height / 2);
+  const anton = await platzMitte(telefon, "Anton");
+  const timo = await platzMitte(telefon, "Timo");
+  await finger("touchStart", anton.x, anton.y);
   await telefon.waitForTimeout(700); // genau das lange Drücken, das vorher markiert hat
-  for (let i = 0; i < 4; i++) {
-    const timo = await kasten("Timo");
-    await finger("touchMove", timo.x + timo.width - 6, timo.y + timo.height / 2);
+  for (const [i, punkt] of [
+    { x: anton.x + 14, y: anton.y + 14 },
+    { x: (anton.x + timo.x) / 2, y: (anton.y + timo.y) / 2 },
+    timo,
+    timo,
+  ].entries()) {
+    await finger("touchMove", punkt.x, punkt.y);
     await telefon.waitForTimeout(60);
   }
-  const gezogen = await telefon.evaluate(() => document.querySelectorAll("#runde .chip.zieht").length);
+  const gezogen = await telefon.evaluate(() => document.querySelectorAll("#runde .platz.zieht").length);
   await finger("touchEnd", 0, 0);
 
   assert.equal(gezogen, 1, "der Finger hat den Chip nicht angehoben");
   for (const seite of [telefon, zweites.seite]) {
     await seite.waitForFunction(
-      () => [...document.querySelectorAll("#runde .chip > button:first-child")].map((b) => b.textContent)[0] === "Timo",
+      () => [...document.querySelectorAll("#runde .platz .nm")].map((b) => b.textContent)[0] === "Timo",
       null,
       { timeout: 8000 },
     );
@@ -290,11 +306,11 @@ test("Am Telefon zieht der Finger den Chip, statt den Namen zu markieren", async
     "das lange Drücken hat Text markiert statt zu ziehen",
   );
 
-  // Und ein kurzes Antippen reicht das Mikrofon weiter.
-  const eva = await kasten("Eva");
-  await finger("touchStart", eva.x + eva.width / 2, eva.y + eva.height / 2);
+  // Und ein kurzes Antippen reicht den Redestab weiter.
+  const eva = await platzMitte(telefon, "Eva");
+  await finger("touchStart", eva.x, eva.y);
   await finger("touchEnd", 0, 0);
-  await telefon.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+  await telefon.waitForFunction(() => document.querySelector("#runde .platz.dran .nm")?.textContent === "Eva", null, {
     timeout: 8000,
   });
 });
