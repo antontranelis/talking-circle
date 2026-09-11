@@ -37,6 +37,9 @@ let aufnahmeClient = null;
 // „Hier aufnehmen" gilt bis zur nächsten Übergabe. Ohne diese Frist ließe sich
 // der Ton nie von dem Gerät zurückholen, an dem der Dranseiende sitzt.
 let uebersteuert = false;
+// Die Runde kann ein Gerät festlegen — das gilt, bis jemand es ändert oder das
+// Gerät verschwindet. `null` heißt Automatik: Es nimmt auf, wer dran ist.
+let aufnahmeWahl = null;
 let naechsteKennung = 0;
 
 const geraetVon = (kennung) => {
@@ -50,17 +53,28 @@ const geraetVon = (kennung) => {
 // übernommene Gerät: das eine Mikrofon, das im Kreis herumgereicht wird.
 function aufnahmeGeraet() {
   const vonHand = aufnahmeClient && clients.has(aufnahmeClient) ? aufnahmeClient.kennung : null;
+  if (aufnahmeWahl !== null && geraetVon(aufnahmeWahl)) return aufnahmeWahl;
   if (uebersteuert && vonHand !== null) return vonHand;
   const dran = circle.state.teilnehmende.find((t) => t.id === circle.state.dran);
   if (dran?.da && geraetVon(dran.geraet)) return dran.geraet;
   return vonHand;
 }
 
+// Wer ist überhaupt verbunden — und wer sitzt an welchem Gerät? Daraus wählen
+// die Einstellungen das Gerät aus, das den Ton liefert.
+const geraeteListe = () =>
+  [...clients].map((ws) => ({
+    kennung: ws.kennung,
+    namen: circle.state.teilnehmende.filter((t) => t.da && t.geraet === ws.kennung).map((t) => t.name),
+  }));
+
 const zustandMitAufnahme = () => ({
   ...circle.state,
   // Der Browser-Schlüssel ist die Platzkarte eines Geräts und bleibt dort.
   teilnehmende: circle.state.teilnehmende.map(({ schluessel, ...wer }) => wer),
   aufnahmeVon: aufnahmeGeraet(),
+  aufnahmeWahl,
+  geraete: geraeteListe(),
 });
 
 // Der Pegel reist mit dem Live-Text: So atmet der Platz des Sprechers auf
@@ -205,7 +219,8 @@ wss.on("connection", (ws) => {
   ws.kennung = ++naechsteKennung;
   clients.add(ws);
   ws.send(JSON.stringify({ typ: "du", kennung: ws.kennung }));
-  ws.send(JSON.stringify({ typ: "state", state: zustandMitAufnahme() }));
+  // Ein Gerät mehr im Raum: Das gehört in die Geräteliste aller Ansichten.
+  sendeAllen({ typ: "state", state: zustandMitAufnahme() });
 
   ws.on("message", async (daten, istBinaer) => {
     if (istBinaer) {
@@ -226,6 +241,13 @@ wss.on("connection", (ws) => {
         case "aufnehmen":
           aufnahmeClient = ws;
           uebersteuert = true;
+          aufnahmeWahl = null; // von Hand geholt sticht die Festlegung
+          sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+          break;
+        // Die Einstellungen legen das Gerät fest; `null` ist wieder Automatik.
+        case "aufnahmeGeraet":
+          aufnahmeWahl = Number.isInteger(m.kennung) ? m.kennung : null;
+          uebersteuert = false;
           sendeAllen({ typ: "state", state: zustandMitAufnahme() });
           break;
         case "beitreten": {
@@ -299,6 +321,9 @@ wss.on("connection", (ws) => {
       aufnahmeClient = null;
       uebersteuert = false;
     }
+    // Ein Gerät, das geht, kommt mit neuer Kennung wieder — die Festlegung
+    // darf nicht auf eine tote Nummer zeigen.
+    if (aufnahmeWahl === ws.kennung) aufnahmeWahl = null;
     sendeAllen({ typ: "state", state: zustandMitAufnahme() });
   });
 });

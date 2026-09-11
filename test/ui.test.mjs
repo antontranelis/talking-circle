@@ -314,3 +314,47 @@ test("Am Telefon zieht der Finger den Chip, statt den Namen zu markieren", async
     timeout: 8000,
   });
 });
+
+test("Die Einstellungen stehen im Sheet — die eigene Seite ist weg", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 5);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  const a = await geraet(browser, PORT + 5);
+  await trittBei(a.seite, "Anton");
+
+  // Die alte Seite gibt es nicht mehr.
+  const antwort = await a.seite.request.get(`http://127.0.0.1:${PORT + 5}/einrichtung.html`);
+  assert.equal(antwort.status(), 404, "die Einrichtungsseite liegt noch da");
+
+  // Mehr → Einstellungen öffnet das Blatt.
+  await a.seite.click("#mehr");
+  await a.seite.click("#einstellungen-auf");
+  await a.seite.waitForSelector("#einstellungen:not([hidden])");
+
+  await a.seite.fill("#einst-titel", "Probelauf am Dienstag");
+  await a.seite.click("#einst-redezeit-mehr"); // 5 → 6 Minuten
+  await a.seite.click("#einst-latenz button:nth-child(2)"); // 0,5 s
+  await a.seite.click("#einst-uebernehmen");
+  await a.seite.waitForSelector("#einstellungen", { state: "hidden" });
+
+  await a.seite.waitForFunction(() => document.getElementById("kopf-titel").textContent === "Probelauf am Dienstag");
+  const stand = await a.seite.evaluate(() => document.getElementById("uhr-grenze").textContent);
+  assert.equal(stand, "06:00", "die Redezeit ist nicht angekommen");
+
+  // Das Gerät entscheidet den Gong für sich allein.
+  await a.seite.click("#mehr");
+  await a.seite.click("#einstellungen-auf");
+  await a.seite.waitForSelector("#einstellungen:not([hidden])");
+  assert.equal(await a.seite.getAttribute("#einst-gong", "aria-checked"), "true");
+  await a.seite.click("#einst-gong");
+  assert.equal(await a.seite.getAttribute("#einst-gong", "aria-checked"), "false");
+  assert.equal(await a.seite.evaluate(() => localStorage.getItem("redekreis.gong")), "0");
+
+  // Und die eigenen Namen stehen hier, samt Weg hinaus.
+  assert.deepEqual(await a.seite.$$eval("#einst-namen .name span", (n) => n.map((e) => e.textContent)), ["Anton"]);
+  await a.seite.click("#einst-namen .name button");
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 0);
+});

@@ -240,7 +240,13 @@ function zeichneRing() {
     av_.style.width = av_.style.height = `${Math.round(av)}px`;
     av_.style.fontSize = `${Math.round(av * 0.34)}px`;
     av_.textContent = [...t.name][0] ?? "?";
-    if (meineIds.has(t.id)) av_.append(Object.assign(document.createElement("i"), { className: "punkt" }));
+    if (meineIds.has(t.id)) {
+      const punkt = Object.assign(document.createElement("i"), { className: "punkt" });
+      // Auf die Kante des Kreises, nicht in die Ecke seines Kastens: sonst
+      // schwebt der Punkt bei großen Plätzen frei daneben.
+      punkt.style.top = punkt.style.right = `${Math.round(av * 0.146 - 4.5)}px`;
+      av_.append(punkt);
+    }
 
     const nm = document.createElement("span");
     nm.className = "nm";
@@ -534,7 +540,9 @@ function uhrStellen() {
   document.body.classList.toggle("zeit-um", Boolean(grenze) && rest <= 0);
   if (grenze && rest <= 0 && !gongGespielt && !state.angehalten) {
     gongGespielt = true;
-    gong();
+    // Es gongt das Gerät, das den Ton liefert — dort steht das Mikrofon im
+    // Raum. Wer das nicht will, schaltet es in den Einstellungen ab.
+    if (gongErlaubt() && ichNehmeAuf()) gong();
   }
 }
 
@@ -695,6 +703,184 @@ function zeichneAufnahme() {
   knopf.setAttribute("aria-label", titel);
 }
 
+// --- Einstellungen: ein Blatt über dem Kreis ------------------------------
+//
+// Zwei Gruppen, die sich nicht vermischen: Was für die ganze Runde gilt, geht
+// an den Server; was nur hier gilt, bleibt im Browser.
+
+const gongErlaubt = () => {
+  try {
+    return localStorage.getItem("redekreis.gong") !== "0";
+  } catch {
+    return true;
+  }
+};
+
+let einstOffen = false;
+
+function einstellungenOeffnen() {
+  menueZeigen(false);
+  einstOffen = true;
+  $("einstellungen").hidden = false;
+  $("einst-schatten").hidden = false;
+  einstFuellen();
+  mikrofoneAuflisten();
+}
+
+function einstellungenSchliessen() {
+  einstOffen = false;
+  $("einstellungen").hidden = true;
+  $("einst-schatten").hidden = true;
+}
+
+// Was in der Runde gilt, steht im Zustand — beim Öffnen wird es abgeschrieben.
+function einstFuellen() {
+  $("einst-titel").value = state.titel;
+  $("einst-sprache").value = state.sprache;
+  latenzSetzen(state.attContextRight);
+  redezeitSetzen(Math.round(state.redezeitMs / 60000));
+  $("einst-gong").setAttribute("aria-checked", String(gongErlaubt()));
+  $("einst-datei").textContent = state.datei;
+  $("einst-modell").textContent = state.bereit ? state.modell : "Modell lädt …";
+  einstGeraete();
+  einstNamen();
+}
+
+function latenzSetzen(wert) {
+  for (const knopf of $("einst-latenz").children) {
+    knopf.setAttribute("aria-checked", String(Number(knopf.dataset.wert) === Number(wert)));
+  }
+}
+const latenzWert = () =>
+  Number([...$("einst-latenz").children].find((k) => k.getAttribute("aria-checked") === "true")?.dataset.wert ?? 13);
+
+function redezeitSetzen(minuten) {
+  $("einst-redezeit").textContent = String(Math.max(0, Math.min(60, minuten)));
+}
+const redezeitWert = () => Number($("einst-redezeit").textContent);
+
+// Welches Gerät liefert den Ton: Automatik oder ein bestimmtes.
+function einstGeraete() {
+  const auswahl = $("einst-aufnahme");
+  const geraete = state.geraete ?? [];
+  auswahl.replaceChildren(
+    Object.assign(document.createElement("option"), {
+      value: "",
+      textContent: "Automatisch — wer dran ist",
+    }),
+    ...geraete.map((g) =>
+      Object.assign(document.createElement("option"), {
+        value: String(g.kennung),
+        textContent:
+          (g.kennung === meineKennung ? "Dieses Gerät" : g.namen.length ? g.namen.join(", ") : `Gerät ${g.kennung}`) +
+          (g.kennung === state.aufnahmeVon ? " · nimmt auf" : ""),
+      }),
+    ),
+  );
+  auswahl.value = state.aufnahmeWahl === null || state.aufnahmeWahl === undefined ? "" : String(state.aufnahmeWahl);
+}
+
+// Wer an diesem Gerät sitzt — und der Weg hinaus.
+function einstNamen() {
+  const leute = kreis().filter((t) => meineIds.has(t.id));
+  if (!leute.length) {
+    $("einst-namen").replaceChildren(
+      Object.assign(document.createElement("p"), {
+        className: "leer",
+        textContent: "An diesem Gerät sitzt noch niemand im Kreis.",
+      }),
+    );
+    return;
+  }
+  $("einst-namen").replaceChildren(
+    ...leute.map((t) => {
+      const zeile = document.createElement("div");
+      zeile.className = "name";
+      const punkt = document.createElement("i");
+      const wer = document.createElement("span");
+      wer.textContent = t.name;
+      const raus = document.createElement("button");
+      raus.type = "button";
+      raus.className = "btn";
+      raus.textContent = "Verlassen";
+      raus.onclick = () => {
+        verlassen(t.id);
+        einstNamen();
+      };
+      zeile.append(punkt, wer, raus);
+      return zeile;
+    }),
+  );
+}
+
+// Die Gerätenamen gibt der Browser erst nach einer Freigabe preis; wer schon im
+// Kreis sitzt, hat sie längst gegeben.
+async function mikrofoneAuflisten() {
+  let geraete = [];
+  try {
+    geraete = (await navigator.mediaDevices.enumerateDevices()).filter((g) => g.kind === "audioinput");
+  } catch {
+    return;
+  }
+  if (!geraete.some((g) => g.label)) return; // ohne Freigabe stehen dort nur leere Namen
+  let gemerkt = "";
+  try {
+    gemerkt = localStorage.getItem("redekreis.mikro") ?? "";
+  } catch {}
+  $("einst-mikro").replaceChildren(
+    Object.assign(document.createElement("option"), { value: "", textContent: "Standard" }),
+    ...geraete.map((g, i) =>
+      Object.assign(document.createElement("option"), {
+        value: g.deviceId,
+        textContent: g.label || `Mikrofon ${i + 1}`,
+      }),
+    ),
+  );
+  $("einst-mikro").value = gemerkt;
+}
+
+$("einstellungen-auf").onclick = einstellungenOeffnen;
+$("einst-zu").onclick = einstellungenSchliessen;
+$("einst-zurueck").onclick = einstellungenSchliessen;
+$("einst-schatten").onclick = einstellungenSchliessen;
+$("einst-redezeit-weniger").onclick = () => redezeitSetzen(redezeitWert() - 1);
+$("einst-redezeit-mehr").onclick = () => redezeitSetzen(redezeitWert() + 1);
+$("einst-latenz").onclick = (ev) => {
+  const knopf = ev.target.closest("button");
+  if (knopf) latenzSetzen(knopf.dataset.wert);
+};
+
+// Was nur hier gilt, wirkt sofort — es geht ja niemanden sonst etwas an.
+$("einst-gong").onclick = () => {
+  const an = $("einst-gong").getAttribute("aria-checked") !== "true";
+  $("einst-gong").setAttribute("aria-checked", String(an));
+  try {
+    localStorage.setItem("redekreis.gong", an ? "1" : "0");
+  } catch {}
+};
+$("einst-mikro").onchange = () => {
+  try {
+    localStorage.setItem("redekreis.mikro", $("einst-mikro").value);
+  } catch {}
+  // Das offene Mikrofon ist das alte — neu aufmachen, sonst gilt die Wahl erst
+  // nach dem Neuladen.
+  mikroSchliessen();
+  mikroPruefen();
+};
+
+$("einst-uebernehmen").onclick = () => {
+  sende({
+    typ: "setzen",
+    titel: $("einst-titel").value.trim() || "Redekreis",
+    sprache: $("einst-sprache").value,
+    attContextRight: latenzWert(),
+    redezeitMs: redezeitWert() * 60000,
+  });
+  const wahl = $("einst-aufnahme").value;
+  sende({ typ: "aufnahmeGeraet", kennung: wahl === "" ? null : Number(wahl) });
+  einstellungenSchliessen();
+};
+
 // --- Bedienung -----------------------------------------------------------
 
 $("aufnahme").onclick = () => sende({ typ: "aufnehmen" });
@@ -791,11 +977,14 @@ document.querySelector(".tafel").addEventListener("touchend", (ev) => {
 
 document.addEventListener("keydown", (ev) => {
   if (ev.target.isContentEditable || ["INPUT", "TEXTAREA"].includes(ev.target.tagName)) return;
+  // Steht das Blatt offen, gehören die Tasten ihm — nur Escape schließt es.
+  if (!$("einstellungen").hidden && ev.code !== "Escape") return;
   if (ev.code === "Space") {
     ev.preventDefault();
     weitergeben();
   } else if (ev.code === "Escape") {
-    if (!$("menue").hidden) menueZeigen(false);
+    if (!$("einstellungen").hidden) einstellungenSchliessen();
+    else if (!$("menue").hidden) menueZeigen(false);
     else beenden();
   } else if (ev.key === "f") {
     document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
@@ -832,6 +1021,11 @@ verbinden(async (m) => {
   state = m.state;
   zeichnen();
   zeichneAufnahme();
+  if (einstOffen) {
+    einstGeraete();
+    einstNamen();
+    $("einst-datei").textContent = state.datei;
+  }
   // Nach einem Neuladen sitzen dieselben Menschen an diesem Gerät wie vorher.
   if (ersteAntwort) {
     for (const name of meineNamen) beitreten(name);

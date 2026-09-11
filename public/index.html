@@ -38,10 +38,10 @@
   </header>
 
   <div id="menue" class="menue" role="menu" hidden>
-    <a href="/einrichtung.html" role="menuitem">
+    <button id="einstellungen-auf" type="button" role="menuitem">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2" /><path d="M12 2.8v2.4M12 18.8v2.4M4.5 7.5l2 1.2M17.5 15.3l2 1.2M4.5 16.5l2-1.2M17.5 8.7l2-1.2" /></svg>
       Einstellungen
-    </a>
+    </button>
     <button id="export" type="button" role="menuitem">Protokoll laden<span class="hinweis">Markdown</span></button>
     <a href="/archiv.html" role="menuitem">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13" /></svg>
@@ -53,6 +53,117 @@
     <span class="strich"></span>
     <button id="neu" class="rot" type="button" role="menuitem">Neue Runde beginnen</button>
   </div>
+
+
+  <div id="einst-schatten" class="schatten" hidden></div>
+  <aside id="einstellungen" class="blatt" aria-label="Einstellungen" hidden>
+    <span class="blatt-griff"></span>
+    <header class="blatt-kopf">
+      <div class="blatt-zeile">
+        <h2 class="blatt-titel">Einstellungen</h2>
+        <button id="einst-zu" class="btn rund" type="button" aria-label="Einstellungen schließen" title="Einstellungen schließen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <p class="blatt-lead">Gilt sofort — auch mitten in der Runde.</p>
+    </header>
+
+    <div class="blatt-inhalt">
+      <div class="gruppen-kopf">
+        <span>Dieser Kreis</span>
+        <em>Änderungen sehen alle im Kreis.</em>
+      </div>
+
+      <label class="feld2">
+        <span class="lab">Titel der Runde</span>
+        <input id="einst-titel" type="text" maxlength="80" />
+      </label>
+
+      <label class="feld2">
+        <span class="lab">Sprache <em>10 Sprachen + automatisch</em></span>
+        <select id="einst-sprache">
+          <option value="de-DE">Deutsch</option>
+          <option value="en-US">Englisch (US)</option>
+          <option value="en-GB">Englisch (GB)</option>
+          <option value="fr-FR">Französisch</option>
+          <option value="es-ES">Spanisch</option>
+          <option value="it-IT">Italienisch</option>
+          <option value="nl-NL">Niederländisch</option>
+          <option value="pt-BR">Portugiesisch (BR)</option>
+          <option value="ru-RU">Russisch</option>
+          <option value="auto">automatisch erkennen</option>
+        </select>
+      </label>
+
+      <div class="feld2">
+        <span class="lab">Erkennung <em>Verzögerung bis der Text steht</em></span>
+        <div id="einst-latenz" class="seg" role="radiogroup" aria-label="Erkennung">
+          <button type="button" data-wert="13" role="radio">1,0 s</button>
+          <button type="button" data-wert="6" role="radio">0,5 s</button>
+          <button type="button" data-wert="3" role="radio">0,25 s</button>
+          <button type="button" data-wert="0" role="radio">sofort</button>
+        </div>
+        <span class="unter">1,0 s liefert den genauesten Text, sofort schreibt schneller mit.</span>
+      </div>
+
+      <div class="feld2">
+        <span class="lab">Redezeit</span>
+        <div class="blatt-zeile">
+          <div class="zaehler">
+            <button id="einst-redezeit-weniger" class="btn eckig" type="button" aria-label="eine Minute weniger">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14" /></svg>
+            </button>
+            <span id="einst-redezeit" class="mono">5</span>
+            <button id="einst-redezeit-mehr" class="btn eckig" type="button" aria-label="eine Minute mehr">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
+          <span class="unter">Minuten je Beitrag · 0 = ohne</span>
+        </div>
+      </div>
+
+      <label class="feld2">
+        <span class="lab">Aufnahmegerät <em>welches Gerät liefert den Ton</em></span>
+        <select id="einst-aufnahme"></select>
+      </label>
+
+      <div class="blatt-strich"></div>
+
+      <div class="gruppen-kopf">
+        <span>Dieses Gerät</span>
+        <em>Nur hier — bleibt im Browser.</em>
+      </div>
+
+      <label class="feld2">
+        <span class="lab">Mikrofon <em>das, was herumgereicht wird</em></span>
+        <select id="einst-mikro"><option value="">Standard</option></select>
+      </label>
+
+      <button id="einst-gong" class="schaltzeile" type="button" role="switch" aria-checked="true">
+        <span class="schaltwort">
+          <span class="titel">Gong auf diesem Gerät</span>
+          <span class="unter">Voreinstellung: nur das Gerät gongt, das gerade aufnimmt.</span>
+        </span>
+        <span class="schalter"><i></i></span>
+      </button>
+
+      <div class="datei-zeile">
+        <span class="lab">Sicherungsdatei</span>
+        <span id="einst-datei" class="mono"></span>
+      </div>
+
+      <div class="feld2">
+        <span class="lab">Deine Namen an diesem Gerät</span>
+        <div id="einst-namen" class="namen"></div>
+      </div>
+    </div>
+
+    <footer class="blatt-fuss">
+      <button id="einst-uebernehmen" class="btn prim" type="button">Übernehmen</button>
+      <button id="einst-zurueck" class="btn still" type="button"><span class="nur-breit">Ohne Änderung zurück</span><span class="nur-schmal">Zurück</span></button>
+      <span id="einst-modell" class="mono"></span>
+    </footer>
+  </aside>
 
   <main class="tafel">
     <section class="kreisspalte">

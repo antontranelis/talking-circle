@@ -870,3 +870,47 @@ test("Wer kein Gerät mehr hat, bekommt das herumgereichte Mikrofon", async (t) 
   assert.match(beitraege[0].text, /Badeanzug/i, "der Ton des herumgereichten Mikrofons kam nicht an");
   a.ws.close();
 });
+
+test("Das Aufnahmegerät lässt sich festlegen — und wieder auf Automatik stellen", async (t) => {
+  // Der Fall aus dem Raum: Das eine herumgereichte Mikrofon hängt am Laptop,
+  // die Menschen sitzen mit ihren Telefonen im Kreis. Dann soll der Laptop
+  // liefern, auch wenn der Dranseiende an einem anderen Gerät sitzt.
+  const port = PORT + 11;
+  await starteServer(t, port);
+  const a = await verbinde(port);
+  const b = await verbinde(port);
+  const kennung = async (k) => (await warteAuf(() => k.eingang.find((m) => m.typ === "du"), "eigene Kennung", 5000)).kennung;
+  const kennungA = await kennung(a);
+  const kennungB = await kennung(b);
+
+  await trittBei(a.ws, a.eingang, "Anton");
+  a.ws.send(JSON.stringify({ typ: "weiter" })); // Anton ist dran, also nimmt sein Gerät auf
+  await warteAuf(() => letzterZustand(a.eingang)?.aufnahmeVon === kennungA, "Aufnahme bei Antons Gerät");
+
+  // Die Runde legt das Gerät fest.
+  b.ws.send(JSON.stringify({ typ: "aufnahmeGeraet", kennung: kennungB }));
+  const fest = await warteAuf(() => {
+    const s = letzterZustand(a.eingang);
+    return s?.aufnahmeVon === kennungB ? s : null;
+  }, "festgelegtes Aufnahmegerät");
+  assert.equal(fest.aufnahmeWahl, kennungB, "die Wahl steht nicht im Zustand");
+  assert.deepEqual(
+    fest.geraete.map((g) => g.kennung).sort(),
+    [kennungA, kennungB].sort(),
+    "die Geräteliste fehlt oder ist unvollständig",
+  );
+  assert.deepEqual(fest.geraete.find((g) => g.kennung === kennungA).namen, ["Anton"]);
+
+  // Und sie bleibt über die Übergabe hinweg stehen.
+  a.ws.send(JSON.stringify({ typ: "weiter" }));
+  await new Promise((ok) => setTimeout(ok, 300));
+  assert.equal(letzterZustand(a.eingang).aufnahmeVon, kennungB, "die Übergabe hat die Wahl überschrieben");
+
+  // Zurück auf Automatik: wieder das Gerät dessen, der dran ist.
+  a.ws.send(JSON.stringify({ typ: "aufnahmeGeraet", kennung: null }));
+  await warteAuf(() => letzterZustand(a.eingang)?.aufnahmeVon === kennungA, "Automatik");
+  assert.equal(letzterZustand(a.eingang).aufnahmeWahl, null);
+  a.ws.send(JSON.stringify({ typ: "stop" }));
+  a.ws.close();
+  b.ws.close();
+});

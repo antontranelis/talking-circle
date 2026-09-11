@@ -106,9 +106,12 @@ Einstellungen, Protokoll laden, Archiv, Nur Sprecher, Vollbild, Neue Runde.
   weiter — im Protokoll ist von der Unterbrechung nichts zu sehen, und die
   Pausenzeit zählt nicht zur Redezeit.
 - **Esc** beendet den Beitrag, ohne einen neuen zu beginnen.
-- **Einrichtung** ändert Titel, Mikrofon, Sprache, Verzögerung oder Redezeit —
-  auch mitten in der Runde; die bisherigen Beiträge bleiben stehen. Wer im
-  Kreis sitzt, steht dort nicht: Das entscheidet der Beitritt.
+- **Einstellungen** (im Mehr-Menü) öffnen ein Blatt in zwei Gruppen: *Dieser
+  Kreis* — Titel, Sprache, Erkennung, Redezeit und welches Gerät den Ton
+  liefert — gilt für alle und lässt sich auch mitten in der Runde ändern; die
+  bisherigen Beiträge bleiben stehen. *Dieses Gerät* — Mikrofon, Gong und die
+  eigenen Namen mit dem Weg hinaus — bleibt im Browser. Wer im Kreis sitzt,
+  entscheidet der Beitritt, nicht die Einstellung.
 - **Neue Runde** schließt das Protokoll ab und fängt leer an. Der Kreis bleibt
   bestehen, das Mikrofon liegt wieder in der Mitte. Die alte Runde bleibt als
   eigene Datei liegen.
@@ -119,7 +122,7 @@ noch schwankende Vermutung des Modells.
 
 ## Redezeit
 
-In der Einrichtung steht die **Redezeit** je Beitrag, standardmäßig fünf
+In den Einstellungen steht die **Redezeit** je Beitrag, standardmäßig fünf
 Minuten; `0` schaltet sie ab. Der Zeitstrahl unter dem Kreis färbt sich in der
 letzten Minute warm, danach rot, und zählt die Überziehung mit einem `+`
 weiter. Genau beim Überschreiten läuft ein weicher Zweiklang — einmal pro
@@ -151,8 +154,7 @@ wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
 ## Archiv in der App
 
-**Archiv** im Mehr-Menü — und **Frühere Runden** auf der Einrichtungsseite,
-damit man auch ohne laufenden Kreis hinkommt — zeigt alle bisherigen Runden: links die Liste mit Datum,
+**Archiv** im Mehr-Menü zeigt alle bisherigen Runden: links die Liste mit Datum,
 Anzahl der Beiträge und den Namen, rechts die gewählte Runde zum Nachlesen.
 **Als Markdown laden** holt sie einzeln herunter — in der Zeitzone des Geräts,
 das sie abruft.
@@ -251,7 +253,7 @@ Regel, dass das Gerät des Dranseienden aufnimmt.
 ## Kommen und Gehen
 
 Der Platz im Kreis gehört dem Namen an einem Browser, nicht der Verbindung.
-Neuladen, ein zweiter Tab, der Weg über die Einrichtung und zurück, ein
+Neuladen, ein zweiter Tab, der Weg ins Archiv und zurück, ein
 Funkloch — jedes Mal bindet sich derselbe Mensch an seinen Platz zurück, ohne
 Doppelgänger und ohne dass er beim Weiterreichen übersprungen wird.
 
@@ -286,7 +288,6 @@ das Mikrofon sonst sperren; für alle anderen braucht es HTTPS.
 | `server.mjs` | HTTP + WebSocket, verteilt den Zustand an alle Ansichten |
 | `circle.mjs` | Der Kreis: Beiträge, Streaming-Sessions, Protokoll auf Platte |
 | `model.mjs` | Findet die Modelldatei |
-| `public/einrichtung.html/.js` | Eigene Seite für Titel, Mikrofon, Sprache, Redezeit |
 | `public/index.html`, `kreis.js` | Die laufende Runde: Bühne links, Verlauf rechts |
 | `public/verbindung.js` | Gemeinsame WebSocket-Leitung beider Seiten |
 | `protokoll.mjs` | Eine Runde als Markdown — und aus Markdown zurück |
