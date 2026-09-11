@@ -93,6 +93,7 @@ wird, rechts der Verlauf.
 - **Die Reihenfolge lässt sich ziehen**: Einen Namen anfassen und an seinen
   Platz schieben — eine gestrichelte Lücke zeigt, wo er landet. Das geht mit
   der Maus wie mit dem Finger, und alle Geräte sehen die neue Reihe sofort.
+  Ein kurzes Antippen gibt weiterhin das Mikrofon an diese Person.
 - **Esc** beendet den Beitrag, ohne einen neuen zu beginnen.
 - **Einrichtung** ändert Titel, Mikrofon, Sprache, Verzögerung oder Redezeit —
   auch mitten in der Runde; die bisherigen Beiträge bleiben stehen. Wer im

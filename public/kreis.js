@@ -205,9 +205,10 @@ function zeichneRunde() {
       if (!t.da) b.classList.add("weg"); // Gerät zu, sitzt aber noch im Kreis
       if (meineIds.has(t.id)) b.classList.add("ich");
       b.title = t.da ? "Das Mikrofon hierher geben" : `${t.name} ist gerade nicht verbunden`;
-      // Nach einem Ziehen kommt noch ein Klick hinterher — der darf das
-      // Mikrofon nicht versehentlich weitergeben.
-      b.onclick = () => Date.now() - zuletztGezogen > 300 && anPerson(t.id);
+      // Zeiger werden oben behandelt; hier bleibt der Weg über die Tastatur.
+      // Ein Klick kurz nach dem Loslassen gehört zu dieser Geste und ist schon
+      // erledigt — sonst käme nach einem Ziehen noch eine Übergabe hinterher.
+      b.onclick = () => Date.now() - zuletztZeiger > 300 && anPerson(t.id);
 
       const chip = document.createElement("span");
       chip.className = "chip";
@@ -225,6 +226,8 @@ function zeichneRunde() {
         chip.append(weg);
       }
       chip.addEventListener("pointerdown", ziehenBeginnen);
+      // Langes Drücken öffnet in Android Chrome sonst das Auswahlmenü.
+      chip.addEventListener("contextmenu", (e) => e.preventDefault());
       return chip;
     }),
   );
@@ -237,7 +240,7 @@ function zeichneRunde() {
 // bleibt es ein Klick, der das Mikrofon weitergibt.
 const ZIEH_SCHWELLE = 6; // px
 let ziehtGerade = false;
-let zuletztGezogen = 0;
+let zuletztZeiger = 0; // wann der Zeiger zuletzt losgelassen hat
 
 function ziehenBeginnen(ev) {
   if (ev.target.closest(".chip-weg")) return; // das × ist kein Griff
@@ -245,6 +248,11 @@ function ziehenBeginnen(ev) {
   const chip = ev.currentTarget;
   const start = { x: ev.clientX, y: ev.clientY };
   let luecke = null;
+
+  // Am Finger fängt der Browser sonst beim längeren Drücken an, Text zu
+  // markieren oder sein eigenes Menü zu öffnen — und nimmt die Geste mit
+  // einem `pointercancel` an sich. Danach ließe sich nichts mehr ziehen.
+  if (ev.pointerType !== "mouse") ev.preventDefault();
 
   const bewegen = (e) => {
     if (!ziehtGerade) {
@@ -254,7 +262,12 @@ function ziehenBeginnen(ev) {
       // gefangener Zeiger schickt auch den Klick an den Chip statt an den
       // Namensknopf darin — dann gäbe ein einfacher Klick das Mikrofon nicht
       // mehr weiter.
-      chip.setPointerCapture(e.pointerId);
+      try {
+        chip.setPointerCapture(e.pointerId);
+      } catch {
+        // Kennt der Browser den Zeiger nicht mehr, reichen die Listener am
+        // Dokument — das Ziehen läuft weiter.
+      }
       chip.classList.add("zieht");
       // Die Lücke zeigt, wo der Chip landet. Sie wandert, der Chip selbst
       // bleibt liegen: Ein Umhängen des gezogenen Knotens nähme ihm den
@@ -269,28 +282,45 @@ function ziehenBeginnen(ev) {
     ziel.parentElement.insertBefore(luecke, e.clientX < mitte ? ziel : ziel.nextSibling);
   };
 
-  const loslassen = () => {
+  const aufraeumen = () => {
     document.removeEventListener("pointermove", bewegen);
     document.removeEventListener("pointerup", loslassen);
-    document.removeEventListener("pointercancel", loslassen);
+    document.removeEventListener("pointercancel", abbrechen);
     chip.classList.remove("zieht");
-    if (!ziehtGerade) return;
-    ziehtGerade = false;
-    zuletztGezogen = Date.now();
-    // Die Lücke steht für den gezogenen Chip — daraus wird die neue Reihe.
-    const ids = [...$("runde").children]
-      .map((k) => (k === luecke ? chip.dataset.id : k === chip ? null : k.dataset.id))
-      .filter(Boolean);
-    luecke.remove();
+    luecke?.remove();
     luecke = null;
-    sende({ typ: "reihenfolge", ids });
+    const gezogen = ziehtGerade;
+    ziehtGerade = false;
+    return gezogen;
+  };
+
+  // Nimmt der Browser die Geste doch an sich, bleibt die Reihe, wie sie war —
+  // hängen bleiben darf der Zug auf keinen Fall.
+  const abbrechen = () => {
+    if (aufraeumen()) zeichneRunde();
+  };
+
+  const loslassen = () => {
+    // Die Lücke steht für den gezogenen Chip — daraus wird die neue Reihe.
+    const ids = luecke
+      ? [...$("runde").children]
+          .map((k) => (k === luecke ? chip.dataset.id : k === chip ? null : k.dataset.id))
+          .filter(Boolean)
+      : null;
+    const gezogen = aufraeumen();
+    zuletztZeiger = Date.now();
+    // Kurzes Antippen ohne Bewegung reicht das Mikrofon weiter. Das passiert
+    // hier und nicht im Klick: Am Finger schluckt das `preventDefault` von
+    // oben den Klick, der sonst darauf folgen würde.
+    if (!gezogen) return anPerson(chip.dataset.id);
+    if (ids) sende({ typ: "reihenfolge", ids });
   };
 
   // Am Dokument, nicht am Chip: Vor dem Einfangen wandert der Zeiger sonst aus
   // dem Chip heraus und das Ziehen bliebe stecken.
   document.addEventListener("pointermove", bewegen);
   document.addEventListener("pointerup", loslassen);
-  document.addEventListener("pointercancel", loslassen);
+  document.addEventListener("pointercancel", abbrechen);
 }
 
 // Der gezogene Chip liegt selbst unter dem Finger — für die Suche nach dem

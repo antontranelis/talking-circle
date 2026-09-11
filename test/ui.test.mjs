@@ -229,3 +229,72 @@ test("Die Reihenfolge im Kreis lässt sich ziehen — und alle sehen sie", async
     timeout: 8000,
   });
 });
+
+test("Am Telefon zieht der Finger den Chip, statt den Namen zu markieren", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 4);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  // Ein Telefon: Touch statt Maus, schmaler Bildschirm.
+  const handy = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  await handy.addInitScript(MIKRO_STUB);
+  const telefon = await handy.newPage();
+  await telefon.goto(`http://127.0.0.1:${PORT + 4}/`, { waitUntil: "networkidle" });
+  const zweites = await geraet(browser, PORT + 4);
+
+  await trittBei(telefon, "Anton");
+  await trittBei(telefon, "Timo");
+  await trittBei(zweites.seite, "Eva");
+  await telefon.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
+  assert.deepEqual(await namen(telefon), ["Anton", "Timo", "Eva"]);
+
+  // Echte Berührungen, nicht nachgebaute Ereignisse: nur so verhält sich der
+  // Browser wie am Telefon — samt Auswahl beim längeren Drücken.
+  const cdp = await handy.newCDPSession(telefon);
+  const finger = (type, x, y) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: type === "touchEnd" ? [] : [{ x, y, radiusX: 12, radiusY: 12, force: 1, id: 1 }],
+    });
+
+  const kasten = (name) => telefon.locator("#runde .chip", { hasText: name }).first().boundingBox();
+  const anton = await kasten("Anton");
+  await finger("touchStart", anton.x + anton.width / 2, anton.y + anton.height / 2);
+  await telefon.waitForTimeout(700); // genau das lange Drücken, das vorher markiert hat
+  for (let i = 0; i < 4; i++) {
+    const timo = await kasten("Timo");
+    await finger("touchMove", timo.x + timo.width - 6, timo.y + timo.height / 2);
+    await telefon.waitForTimeout(60);
+  }
+  const gezogen = await telefon.evaluate(() => document.querySelectorAll("#runde .chip.zieht").length);
+  await finger("touchEnd", 0, 0);
+
+  assert.equal(gezogen, 1, "der Finger hat den Chip nicht angehoben");
+  for (const seite of [telefon, zweites.seite]) {
+    await seite.waitForFunction(
+      () => [...document.querySelectorAll("#runde .chip > button:first-child")].map((b) => b.textContent)[0] === "Timo",
+      null,
+      { timeout: 8000 },
+    );
+  }
+  assert.deepEqual(await namen(telefon), ["Timo", "Anton", "Eva"]);
+  assert.equal(
+    await telefon.evaluate(() => window.getSelection().toString()),
+    "",
+    "das lange Drücken hat Text markiert statt zu ziehen",
+  );
+
+  // Und ein kurzes Antippen reicht das Mikrofon weiter.
+  const eva = await kasten("Eva");
+  await finger("touchStart", eva.x + eva.width / 2, eva.y + eva.height / 2);
+  await finger("touchEnd", 0, 0);
+  await telefon.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+    timeout: 8000,
+  });
+});
