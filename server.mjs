@@ -237,6 +237,16 @@ wss.on("connection", (ws) => {
         case "verlassen":
           await circle.verlassen(m.id);
           break;
+        case "reihenfolge":
+          if (!circle.sortiere(m.ids)) {
+            ws.send(
+              JSON.stringify({
+                typ: "fehler",
+                text: "Der Kreis hat sich inzwischen geändert — die Reihenfolge wurde nicht übernommen.",
+              }),
+            );
+          }
+          break;
         case "weiter":
           await mikrofonAn(circle.naechster());
           break;

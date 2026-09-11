@@ -388,6 +388,26 @@ export class Circle {
     this.#karenz.delete(id);
   }
 
+  // Die Reihenfolge im Kreis ist eine Absprache, keine Beitrittsliste — sie
+  // lässt sich umstellen. Angenommen wird nur eine vollständige Liste: Hat in
+  // der Zwischenzeit jemand den Kreis verlassen oder ist einer dazugekommen,
+  // wäre die gezogene Reihenfolge veraltet und würde jemanden verschlucken.
+  sortiere(ids) {
+    if (!Array.isArray(ids) || ids.length !== this.state.teilnehmende.length) return false;
+    const offen = new Map(this.state.teilnehmende.map((t) => [t.id, t]));
+    const neu = [];
+    for (const id of ids) {
+      const teilnehmer = offen.get(id);
+      if (!teilnehmer) return false; // fremd oder doppelt
+      offen.delete(id);
+      neu.push(teilnehmer);
+    }
+    // `dran` bleibt derselbe Mensch; nur wer nach ihm kommt, ändert sich.
+    this.state.teilnehmende = neu;
+    this.#onChange("state");
+    return true;
+  }
+
   anwesende() {
     return this.state.teilnehmende.filter((t) => t.da);
   }

@@ -65,8 +65,7 @@ async function trittBei(seite, name) {
 
 const dran = (seite) => seite.evaluate(() => document.querySelector("#runde button.dran")?.textContent ?? null);
 const fuss = async (seite) => (await seite.textContent("#aufnahme-hinweis")).trim();
-const namen = (seite) =>
-  seite.$$eval("#runde .chip > button:first-child, #runde > button", (ns) => ns.map((n) => n.textContent));
+const namen = (seite) => seite.$$eval("#runde .chip > button:first-child", (ns) => ns.map((n) => n.textContent));
 
 // Leertaste auf der Seite selbst, nicht in einem Eingabefeld.
 async function leertaste(seite) {
@@ -85,7 +84,7 @@ test("Die Leertaste reicht das Mikrofon auf das andere Gerät weiter", async (t)
   const b = await geraet(browser, PORT);
   await trittBei(a.seite, "Anton");
   await trittBei(b.seite, "Eva");
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip, #runde > button").length === 2);
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 2);
 
   await leertaste(a.seite);
   await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton");
@@ -124,7 +123,8 @@ test("Ein zweiter Tab nimmt niemandem den Platz im Kreis", async (t) => {
   // Leitung geht erst danach zu — genau hier ging Eva vorher verloren.
   const zweiterTab = await b.ctx.newPage();
   await zweiterTab.goto(`http://127.0.0.1:${PORT + 1}/`, { waitUntil: "networkidle" });
-  await zweiterTab.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 1);
+  // Das × steht nur an den eigenen Leuten: Der zweite Tab hat Eva als seine erkannt.
+  await zweiterTab.waitForFunction(() => document.querySelectorAll("#runde .chip-weg").length === 1);
   await b.seite.close();
   await a.seite.waitForTimeout(800);
 
@@ -155,7 +155,7 @@ test("Wer geht, verlässt den Kreis — von Hand sofort, nach einer Trennung mit
   await trittBei(a.seite, "Anton");
   await trittBei(a.seite, "Timo"); // zwei Menschen an einem Gerät
   await trittBei(b.seite, "Eva");
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip, #runde > button").length === 3);
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
 
   // Gerät B geht zu: Eva bleibt zunächst gedimmt stehen …
   await b.ctx.close();
@@ -163,7 +163,7 @@ test("Wer geht, verlässt den Kreis — von Hand sofort, nach einer Trennung mit
   assert.deepEqual(await namen(a.seite), ["Anton", "Timo", "Eva"]);
 
   // … und ist nach der Karenzzeit aus dem Kreis.
-  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip, #runde > button").length === 2, null, {
+  await a.seite.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 2, null, {
     timeout: 15_000,
   });
   assert.deepEqual(await namen(a.seite), ["Anton", "Timo"], "Eva steht weiter im Kreis");
@@ -175,4 +175,57 @@ test("Wer geht, verlässt den Kreis — von Hand sofort, nach einer Trennung mit
   await a.seite.reload({ waitUntil: "networkidle" });
   await a.seite.waitForTimeout(1200);
   assert.deepEqual(await namen(a.seite), ["Anton"], "Timo ist beim Neuladen wieder aufgetaucht");
+});
+
+test("Die Reihenfolge im Kreis lässt sich ziehen — und alle sehen sie", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 3);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  const a = await geraet(browser, PORT + 3);
+  const b = await geraet(browser, PORT + 3);
+  await trittBei(a.seite, "Anton");
+  await trittBei(a.seite, "Timo");
+  await trittBei(b.seite, "Eva");
+  for (const s of [a.seite, b.seite]) {
+    await s.waitForFunction(() => document.querySelectorAll("#runde .chip").length === 3);
+  }
+  assert.deepEqual(await namen(a.seite), ["Anton", "Timo", "Eva"]);
+
+  // Anton hinter Eva ziehen: Maus auf seinen Chip, halten, nach rechts. Die
+  // Ziel-Koordinate wird unterwegs neu gemessen — sobald die Lücke aufgeht,
+  // rutschen die Chips weiter nach rechts.
+  const kasten = (seite, name) => seite.locator("#runde .chip", { hasText: name }).first().boundingBox();
+  const anton = await kasten(a.seite, "Anton");
+  const mitte = anton.y + anton.height / 2;
+  await a.seite.mouse.move(anton.x + anton.width / 2, mitte);
+  await a.seite.mouse.down();
+  for (let i = 0; i < 4; i++) {
+    const eva = await kasten(a.seite, "Eva");
+    await a.seite.mouse.move(eva.x + eva.width - 6, mitte, { steps: 4 });
+  }
+  await a.seite.mouse.up();
+
+  const zuletztAnton = () =>
+    [...document.querySelectorAll("#runde .chip")].map((c) => c.textContent.replace("×", ""))[2] === "Anton";
+  for (const seite of [b.seite, a.seite]) await seite.waitForFunction(zuletztAnton, null, { timeout: 8000 });
+  assert.deepEqual(await namen(a.seite), ["Timo", "Eva", "Anton"], "das ziehende Gerät zeigt die alte Reihe");
+  assert.deepEqual(await namen(b.seite), ["Timo", "Eva", "Anton"], "das andere Gerät hat die neue Reihe nicht bekommen");
+
+  // Und das Weiterreichen folgt der neuen Reihe: nach Timo kommt Eva.
+  await leertaste(a.seite);
+  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Timo");
+  await leertaste(a.seite);
+  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Eva", null, {
+    timeout: 8000,
+  });
+
+  // Ein Klick ohne Ziehen gibt weiterhin das Mikrofon weiter (auf den Namen,
+  // nicht auf das × daneben).
+  await a.seite.locator("#runde .chip", { hasText: "Anton" }).first().locator("button").first().click();
+  await a.seite.waitForFunction(() => document.querySelector("#runde button.dran")?.textContent === "Anton", null, {
+    timeout: 8000,
+  });
 });

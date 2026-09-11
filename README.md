@@ -90,6 +90,9 @@ wird, rechts der Verlauf.
   Beitrag wird abgeschlossen, der neue beginnt. Wessen Gerät gerade weg ist,
   wird dabei übersprungen. Ein Klick auf einen Namen springt direkt zu dieser
   Person.
+- **Die Reihenfolge lässt sich ziehen**: Einen Namen anfassen und an seinen
+  Platz schieben — eine gestrichelte Lücke zeigt, wo er landet. Das geht mit
+  der Maus wie mit dem Finger, und alle Geräte sehen die neue Reihe sofort.
 - **Esc** beendet den Beitrag, ohne einen neuen zu beginnen.
 - **Einrichtung** ändert Titel, Mikrofon, Sprache, Verzögerung oder Redezeit —
   auch mitten in der Runde; die bisherigen Beiträge bleiben stehen. Wer im
@@ -303,6 +306,7 @@ Reihenfolge über Abwesende hinweg und die Karenzzeit beim Gehen.
 `test/ui.test.mjs` geht den Weg, den ein Mensch wirklich geht: zwei Browser als
 zwei Geräte, Namen ins Feld tippen, beitreten, **Leertaste** — und prüft, dass
 `dran` und die Aufnahme zwischen den Geräten wechseln, dass ein zweiter Tab
-niemandem den Platz nimmt und dass das Gehen im Kreis ankommt. Er braucht einen
+niemandem den Platz nimmt, dass das Gehen im Kreis ankommt und dass ein
+gezogener Name auf beiden Geräten an seinem neuen Platz steht. Er braucht einen
 Chrome auf der Platte (`CHROME_PFAD` setzt den Pfad) und wird übersprungen,
 wenn keiner da ist.

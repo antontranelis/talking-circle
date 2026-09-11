@@ -193,6 +193,7 @@ function zeichnen() {
 }
 
 function zeichneRunde() {
+  if (ziehtGerade) return; // mitten im Ziehen würde ein Neuaufbau den Griff abreißen
   const gesprochen = new Set(state.beitraege.map((b) => b.sprecher));
   $("runde").replaceChildren(
     ...kreis().map((t) => {
@@ -204,22 +205,101 @@ function zeichneRunde() {
       if (!t.da) b.classList.add("weg"); // Gerät zu, sitzt aber noch im Kreis
       if (meineIds.has(t.id)) b.classList.add("ich");
       b.title = t.da ? "Das Mikrofon hierher geben" : `${t.name} ist gerade nicht verbunden`;
-      b.onclick = () => anPerson(t.id);
-      if (!meineIds.has(t.id)) return b;
+      // Nach einem Ziehen kommt noch ein Klick hinterher — der darf das
+      // Mikrofon nicht versehentlich weitergeben.
+      b.onclick = () => Date.now() - zuletztGezogen > 300 && anPerson(t.id);
 
-      // Nur für die eigenen Leute: Wer hier sitzt, kann auch wieder aufstehen.
-      const weg = document.createElement("button");
-      weg.type = "button";
-      weg.className = "chip-weg";
-      weg.textContent = "×";
-      weg.title = `${t.name} verlässt den Kreis`;
-      weg.onclick = () => verlassen(t.id);
       const chip = document.createElement("span");
       chip.className = "chip";
-      chip.append(b, weg);
+      chip.dataset.id = t.id;
+      chip.append(b);
+
+      // Nur für die eigenen Leute: Wer hier sitzt, kann auch wieder aufstehen.
+      if (meineIds.has(t.id)) {
+        const weg = document.createElement("button");
+        weg.type = "button";
+        weg.className = "chip-weg";
+        weg.textContent = "×";
+        weg.title = `${t.name} verlässt den Kreis`;
+        weg.onclick = () => verlassen(t.id);
+        chip.append(weg);
+      }
+      chip.addEventListener("pointerdown", ziehenBeginnen);
       return chip;
     }),
   );
+}
+
+// --- Reihenfolge ziehen ---------------------------------------------------
+//
+// Mit Zeigern statt HTML5-Ziehen: Telefone kennen `dragstart` nicht, und sie
+// sind der Hauptfall. Erst ab einer Schwelle gilt es als Ziehen — darunter
+// bleibt es ein Klick, der das Mikrofon weitergibt.
+const ZIEH_SCHWELLE = 6; // px
+let ziehtGerade = false;
+let zuletztGezogen = 0;
+
+function ziehenBeginnen(ev) {
+  if (ev.target.closest(".chip-weg")) return; // das × ist kein Griff
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  const chip = ev.currentTarget;
+  const start = { x: ev.clientX, y: ev.clientY };
+  let luecke = null;
+
+  const bewegen = (e) => {
+    if (!ziehtGerade) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < ZIEH_SCHWELLE) return;
+      ziehtGerade = true;
+      // Erst jetzt den Zeiger einfangen, nicht schon beim Aufsetzen: Ein
+      // gefangener Zeiger schickt auch den Klick an den Chip statt an den
+      // Namensknopf darin — dann gäbe ein einfacher Klick das Mikrofon nicht
+      // mehr weiter.
+      chip.setPointerCapture(e.pointerId);
+      chip.classList.add("zieht");
+      // Die Lücke zeigt, wo der Chip landet. Sie wandert, der Chip selbst
+      // bleibt liegen: Ein Umhängen des gezogenen Knotens nähme ihm den
+      // Zeiger-Griff, und das Ziehen bräche nach dem ersten Schritt ab.
+      luecke = document.createElement("span");
+      luecke.className = "chip-luecke";
+      chip.parentElement.insertBefore(luecke, chip);
+    }
+    const ziel = chipUnter(e.clientX, e.clientY, chip);
+    if (!ziel || ziel === chip) return;
+    const mitte = ziel.getBoundingClientRect().left + ziel.offsetWidth / 2;
+    ziel.parentElement.insertBefore(luecke, e.clientX < mitte ? ziel : ziel.nextSibling);
+  };
+
+  const loslassen = () => {
+    document.removeEventListener("pointermove", bewegen);
+    document.removeEventListener("pointerup", loslassen);
+    document.removeEventListener("pointercancel", loslassen);
+    chip.classList.remove("zieht");
+    if (!ziehtGerade) return;
+    ziehtGerade = false;
+    zuletztGezogen = Date.now();
+    // Die Lücke steht für den gezogenen Chip — daraus wird die neue Reihe.
+    const ids = [...$("runde").children]
+      .map((k) => (k === luecke ? chip.dataset.id : k === chip ? null : k.dataset.id))
+      .filter(Boolean);
+    luecke.remove();
+    luecke = null;
+    sende({ typ: "reihenfolge", ids });
+  };
+
+  // Am Dokument, nicht am Chip: Vor dem Einfangen wandert der Zeiger sonst aus
+  // dem Chip heraus und das Ziehen bliebe stecken.
+  document.addEventListener("pointermove", bewegen);
+  document.addEventListener("pointerup", loslassen);
+  document.addEventListener("pointercancel", loslassen);
+}
+
+// Der gezogene Chip liegt selbst unter dem Finger — für die Suche nach dem
+// Nachbarn muss er kurz durchsichtig für Zeiger sein.
+function chipUnter(x, y, gezogen) {
+  gezogen.style.pointerEvents = "none";
+  const drunter = document.elementFromPoint(x, y);
+  gezogen.style.pointerEvents = "";
+  return drunter?.closest(".chip") ?? null; // die Lücke ist kein .chip
 }
 
 function zeichneLive() {

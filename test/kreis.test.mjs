@@ -148,3 +148,33 @@ test("Wer dran war und geht, gibt das Mikrofon zurück in die Mitte", async () =
   // Nicht von selbst weiterspringen: Wer weitergibt, entscheidet der Kreis.
   assert.equal(kreis.state.dran, null);
 });
+
+test("Die Reihenfolge im Kreis lässt sich umstellen", () => {
+  const kreis = new Circle();
+  const anton = kreis.beitreten("Anton", 1, "a");
+  const eva = kreis.beitreten("Eva", 2, "b");
+  const timo = kreis.beitreten("Timo", 3, "c");
+  kreis.gibMikrofonAn(eva);
+
+  assert.equal(kreis.sortiere([timo, anton, eva]), true);
+  assert.deepEqual(kreis.state.teilnehmende.map((t) => t.name), ["Timo", "Anton", "Eva"]);
+  assert.equal(kreis.state.dran, eva, "das Mikrofon ist beim Sortieren weitergerutscht");
+  assert.equal(kreis.naechster(), timo, "nach Eva kommt jetzt wieder Timo");
+});
+
+test("Eine Reihenfolge, die nicht zum Kreis passt, wird verworfen", () => {
+  const kreis = new Circle();
+  const anton = kreis.beitreten("Anton", 1, "a");
+  const eva = kreis.beitreten("Eva", 2, "b");
+  const urspruenglich = kreis.state.teilnehmende.map((t) => t.id);
+
+  for (const [was, liste] of [
+    ["jemand fehlt", [eva]],
+    ["ein Fremder ist dabei", [anton, eva, "t99"]],
+    ["einer steht doppelt", [anton, anton]],
+    ["gar keine Liste", null],
+  ]) {
+    assert.equal(kreis.sortiere(liste), false, `${was}: die Liste wurde angenommen`);
+    assert.deepEqual(kreis.state.teilnehmende.map((t) => t.id), urspruenglich, `${was}: der Kreis hat sich geändert`);
+  }
+});
