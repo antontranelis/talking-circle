@@ -72,8 +72,10 @@ async function zeigeRunde(id) {
   gewaehlt = { id, runde };
 
   $("gelesen-titel").textContent = runde.titel;
-  $("gelesen-titel").className = "sprecher";
+  $("gelesen-titel").className = "runde-titel";
   $("gelesen-zeit").textContent = datum(runde.begonnen);
+  $("gelesen-tag").hidden = !runde.bearbeitet;
+  umbenennenAus();
   $("laden").href = `/runde/${id}.md?tz=${encodeURIComponent(zone)}`;
   $("werkzeuge").hidden = imPapierkorb;
   $("werkzeuge-papierkorb").hidden = !imPapierkorb;
@@ -85,12 +87,18 @@ async function zeigeRunde(id) {
 }
 
 async function zeigeListe() {
-  const runden = await frage(imPapierkorb ? "/api/papierkorb" : "/api/runden");
-  $("listen-titel").textContent = imPapierkorb ? "Papierkorb" : "Runden";
-  $("papierkorb-an").textContent = imPapierkorb ? "Zurück zum Archiv" : "Papierkorb";
-  $("anzahl").textContent = runden.length === 1 ? "1 Runde" : `${runden.length} Runden`;
+  const [runden, papierkorb] = await Promise.all([
+    frage(imPapierkorb ? "/api/papierkorb" : "/api/runden"),
+    frage(imPapierkorb ? "/api/runden" : "/api/papierkorb"),
+  ]);
+  const alle = imPapierkorb ? papierkorb : runden;
+  const weg = imPapierkorb ? runden : papierkorb;
+  $("quelle-runden").setAttribute("aria-checked", String(!imPapierkorb));
+  $("quelle-papierkorb").setAttribute("aria-checked", String(imPapierkorb));
+  $("anzahl").textContent =
+    `${alle.length} ${alle.length === 1 ? "Runde" : "Runden"}` + (weg.length ? ` · ${weg.length} im Papierkorb` : "");
 
-  if (!runden.length) {
+  if (!alle.length) {
     $("runden").replaceChildren(
       Object.assign(document.createElement("li"), {
         className: "platzhalter",
@@ -99,39 +107,45 @@ async function zeigeListe() {
     );
     $("gelesen").replaceChildren();
     $("gelesen-titel").textContent = "Keine Runde gewählt";
-    $("gelesen-titel").className = "sprecher still";
+    $("gelesen-titel").className = "runde-titel still";
     $("gelesen-zeit").textContent = "";
+    $("gelesen-tag").hidden = true;
     $("werkzeuge").hidden = true;
     $("werkzeuge-papierkorb").hidden = true;
+    zeigeModus("lesen");
     return;
   }
 
   $("runden").replaceChildren(
-    ...runden.map((r) => {
+    ...alle.map((r) => {
       const li = document.createElement("li");
       li.dataset.id = r.id;
       li.className = "runde-eintrag";
-      const titel = document.createElement("div");
-      titel.className = "wer";
+      const zeile = document.createElement("div");
+      zeile.className = "titel-zeile";
+      const titel = document.createElement("span");
+      titel.className = "name";
       titel.textContent = r.titel;
+      zeile.append(titel);
       if (r.bearbeitet) {
         const merkmal = document.createElement("span");
-        merkmal.className = "bearbeitet";
+        merkmal.className = "tag";
         merkmal.textContent = "bearbeitet";
-        titel.append(" ", merkmal);
+        zeile.append(merkmal);
       }
       const wann = document.createElement("div");
-      wann.className = "wann";
-      wann.textContent =
-        `${datum(r.begonnen)} · ${r.anzahl} ${r.anzahl === 1 ? "Beitrag" : "Beiträge"}` +
-        (r.sprecher.length ? ` · ${r.sprecher.join(", ")}` : "");
-      li.append(titel, wann);
+      wann.className = "meta";
+      wann.textContent = `${datum(r.begonnen)} · ${r.anzahl} ${r.anzahl === 1 ? "Beitrag" : "Beiträge"}`;
+      const leute = document.createElement("div");
+      leute.className = "leute";
+      leute.textContent = r.sprecher.join(", ");
+      li.append(zeile, wann, leute);
       li.onclick = () => zeigeRunde(r.id).catch((e) => melde(e.message, "fehler"));
       return li;
     }),
   );
 
-  const bleibt = runden.some((r) => r.id === gewaehlt?.id) ? gewaehlt.id : runden[0].id;
+  const bleibt = alle.some((r) => r.id === gewaehlt?.id) ? gewaehlt.id : alle[0].id;
   await zeigeRunde(bleibt);
 }
 
@@ -147,6 +161,7 @@ function zeigeModus(neuerModus) {
   $("verlauf-blatt").hidden = modus !== "verlauf";
   $("bearbeiten").classList.toggle("an", modus === "bearbeiten");
   $("verlauf-an").classList.toggle("an", modus === "verlauf");
+  if (modus !== "lesen") umbenennenAus();
 }
 
 const ausBearbeitung = () => zeigeModus("lesen");
@@ -189,17 +204,40 @@ $("speichern").onclick = async () => {
   }
 };
 
-$("umbenennen").onclick = async () => {
-  const titel = prompt("Neuer Name der Runde:", gewaehlt.runde.titel);
-  if (titel === null) return;
+// Umbenennen geschieht an der Stelle, an der der Name steht — kein
+// Browser-Kasten über der Runde.
+function umbenennenAn() {
+  $("titel-feld").value = gewaehlt.runde.titel;
+  $("gelesen-titel").hidden = true;
+  $("titel-feld").hidden = false;
+  $("titel-hinweis").hidden = false;
+  $("titel-feld").focus();
+  $("titel-feld").select();
+}
+
+function umbenennenAus() {
+  $("gelesen-titel").hidden = false;
+  $("titel-feld").hidden = true;
+  $("titel-hinweis").hidden = true;
+}
+
+async function umbenennen(titel) {
   try {
     await frage(`/api/runde/${gewaehlt.id}/umbenennen`, { method: "POST", body: JSON.stringify({ titel }) });
+    umbenennenAus();
     await zeigeListe();
     melde("Umbenannt.", "gut");
   } catch (e) {
     melde(e.message, "fehler");
   }
+}
+
+$("umbenennen").onclick = () => ($("titel-feld").hidden ? umbenennenAn() : umbenennenAus());
+$("titel-feld").onkeydown = (ev) => {
+  if (ev.key === "Enter") umbenennen($("titel-feld").value.trim());
+  if (ev.key === "Escape") umbenennenAus();
 };
+$("titel-feld").onblur = umbenennenAus;
 
 $("loeschen").onclick = async () => {
   const anzahl = gewaehlt.runde.beitraege?.length ?? 0;
@@ -225,11 +263,14 @@ $("zurueckholen").onclick = async () => {
   }
 };
 
-$("papierkorb-an").onclick = async () => {
-  imPapierkorb = !imPapierkorb;
+async function quelleWechseln(korb) {
+  if (imPapierkorb === korb) return;
+  imPapierkorb = korb;
   gewaehlt = null;
   await zeigeListe();
-};
+}
+$("quelle-runden").onclick = () => quelleWechseln(false).catch((e) => melde(e.message, "fehler"));
+$("quelle-papierkorb").onclick = () => quelleWechseln(true).catch((e) => melde(e.message, "fehler"));
 
 // --- Verlauf --------------------------------------------------------------
 
@@ -246,15 +287,12 @@ $("verlauf-an").onclick = async () => {
             const li = document.createElement("li");
             const kopf = document.createElement("div");
             kopf.className = "eintrag-kopf";
-            const was = document.createElement("span");
-            was.className = "wer";
-            was.textContent = s.aktion;
             const wann = document.createElement("span");
             wann.className = "wann";
             wann.textContent = datum(s.zeit);
             const knopf = document.createElement("button");
             knopf.type = "button";
-            knopf.className = "klein";
+            knopf.className = "btn";
             knopf.textContent = "Zurücknehmen";
             knopf.onclick = async () => {
               if (!confirm(`Den Stand von vor „${s.aktion}" wiederherstellen?`)) return;
@@ -269,10 +307,10 @@ $("verlauf-an").onclick = async () => {
                 melde(e.message, "fehler");
               }
             };
-            kopf.append(was, wann, knopf);
+            kopf.append(wann, knopf);
             const text = document.createElement("p");
             text.className = "was";
-            text.textContent = s.beschreibung;
+            text.textContent = `${s.aktion} — ${s.beschreibung}`;
             li.append(kopf, text);
             return li;
           })

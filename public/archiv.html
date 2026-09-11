@@ -9,35 +9,42 @@
 </head>
 <body class="seite-archiv">
   <header class="kopf">
-    <div class="kopf-links">
-      <h1>Archiv</h1>
-      <span id="anzahl" class="modell"></span>
-    </div>
+    <h1>Archiv</h1>
+    <span id="anzahl" class="kopf-meta"></span>
     <div class="kopf-rechts">
-      <button id="papierkorb-an" class="klein" type="button">Papierkorb</button>
-      <a class="klein" href="/">Zurück zum Kreis</a>
+      <a class="btn" href="/">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+        Zurück zum Kreis
+      </a>
     </div>
   </header>
 
-  <main class="tafel">
-    <section class="verlauf">
-      <h2 id="listen-titel">Runden</h2>
+  <main class="archiv-tafel">
+    <aside class="karte archiv-liste">
+      <div id="quelle" class="seg" role="radiogroup" aria-label="Was gezeigt wird">
+        <button id="quelle-runden" type="button" role="radio" aria-checked="true">Runden</button>
+        <button id="quelle-papierkorb" type="button" role="radio" aria-checked="false">Papierkorb</button>
+      </div>
       <ol id="runden"></ol>
-    </section>
+    </aside>
 
-    <section class="buehne lesen">
-      <div class="buehne-kopf">
-        <span id="gelesen-titel" class="sprecher still">Keine Runde gewählt</span>
-        <span id="gelesen-zeit" class="uhr"></span>
+    <section class="karte archiv-blatt">
+      <div class="runde-kopf">
+        <span id="gelesen-titel" class="runde-titel still">Keine Runde gewählt</span>
+        <input id="titel-feld" class="titel-feld" type="text" maxlength="80" hidden aria-label="Neuer Name der Runde" />
+        <span id="titel-hinweis" class="unter" hidden>Umbenennen — Enter übernimmt</span>
+        <span id="gelesen-zeit" class="mono"></span>
+        <span id="gelesen-tag" class="tag" hidden>bearbeitet</span>
+
         <div id="werkzeuge" class="werkzeuge" hidden>
-          <button id="bearbeiten" class="klein" type="button">Bearbeiten</button>
-          <button id="umbenennen" class="klein" type="button">Umbenennen</button>
-          <button id="verlauf-an" class="klein" type="button">Verlauf</button>
-          <button id="loeschen" class="klein" type="button">Löschen</button>
-          <a id="laden" class="klein" href="#">Laden</a>
+          <button id="bearbeiten" class="btn" type="button">Bearbeiten</button>
+          <button id="umbenennen" class="btn" type="button">Umbenennen</button>
+          <button id="verlauf-an" class="btn" type="button">Verlauf</button>
+          <a id="laden" class="btn" href="#">Laden</a>
+          <button id="loeschen" class="btn gefahr" type="button">Löschen</button>
         </div>
         <div id="werkzeuge-papierkorb" class="werkzeuge" hidden>
-          <button id="zurueckholen" class="klein" type="button">Wiederherstellen</button>
+          <button id="zurueckholen" class="btn" type="button">Wiederherstellen</button>
         </div>
       </div>
 
@@ -47,20 +54,27 @@
 
       <div id="werkstatt" class="werkstatt" hidden>
         <p class="hinweis-text">
-          Überschriften der Form <code>## Name · 14:37</code> trennen die Beiträge. Eine neue Überschrift
-          teilt einen Block auf — so kommt ein vergessener Sprecher nachträglich zu seinem Beitrag.
+          Überschriften der Form <code>## Name · 14:37</code> trennen die Beiträge. Eine zusätzliche Überschrift
+          teilt einen Block auf — so kommt ein vergessener Sprecher nachträglich zu seinem Beitrag. Zeitstempel
+          bleiben erhalten, wo Überschrift und Beitrag zusammenpassen.
         </p>
         <textarea id="editor" spellcheck="false"></textarea>
         <div class="werkstatt-fuss">
-          <button id="speichern" class="gross" type="button">Speichern</button>
-          <button id="abbrechen" class="klein" type="button">Abbrechen</button>
+          <button id="speichern" class="btn prim" type="button">Speichern</button>
+          <button id="abbrechen" class="btn still" type="button">Abbrechen</button>
           <span id="editor-status" class="status"></span>
+          <span class="unter weit">Die laufende Runde lässt sich nicht bearbeiten — erst Neue Runde, dann steht sie hier bereit.</span>
         </div>
       </div>
 
       <div id="verlauf-blatt" class="verlauf-blatt" hidden>
         <h2>Änderungen</h2>
+        <p class="unter">Vor jeder Änderung wird der vorherige Stand gesichert. Die Rücknahme ist selbst ein Schritt.</p>
         <ol id="schritte"></ol>
+        <div class="korb-hinweis">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13" /></svg>
+          Gelöschte Runden bleiben im Papierkorb.
+        </div>
       </div>
     </section>
   </main>
