@@ -205,7 +205,7 @@ function ringMasse() {
   // Der Platz darf nicht größer werden, als der Abstand auf der Bahn zulässt.
   // Am Telefon darf der Platz nicht unter Fingergröße fallen, am Beamer nicht
   // ins Riesige wachsen.
-  const grob = Math.max(44, Math.min(76, S * 0.115));
+  const grob = Math.max(44, Math.min(72, S * 0.15));
   const abstand = (2 * Math.PI * ((S - grob - 26) / 2)) / n;
   const av = Math.max(30, Math.min(grob, abstand * 0.72));
   return { S, av, R: (S - av - 26) / 2, n, abstand };
@@ -222,7 +222,7 @@ function zeichneRing() {
 
   const gesprochen = new Set(state.beitraege.map((b) => b.sprecher));
   platzNodes.clear();
-  const stuecke = [bahn(masse)];
+  const stuecke = [bahn(masse), schweif(masse), marke(masse)];
 
   for (const t of leute) {
     const platz = document.createElement("div");
@@ -287,6 +287,56 @@ function bahn({ S, R }) {
   c.setAttribute("stroke-opacity", "0.12");
   c.setAttribute("stroke-width", "1");
   svg.append(c);
+  return svg;
+}
+
+// Der Schweif: ein Komet hinter dem, der dran ist. Ein einziger Farbverlauf auf
+// der Kreisbahn — als conic-gradient ab dem Winkel des Sprecherplatzes, auf die
+// Bahn maskiert. Keine Segmente: so gibt es keine Kappen und keine Perlen.
+function schweif({ S, R, av, n }) {
+  const div = document.createElement("div");
+  div.className = "schweif";
+  div.setAttribute("aria-hidden", "true");
+  div.style.width = div.style.height = `${S}px`;
+  const wer = kreis().findIndex((t) => t.id === state.dran);
+  if (wer < 0) return div; // niemand dran: keine Spur
+
+  const halt = Boolean(state.angehalten);
+  const dick = Math.max(4, av * 0.08);
+  const stufen = [];
+  for (let i = 0; i <= 16; i++) {
+    const u = i / 16;
+    // Quadratisch von null auf voll über 344 Grad — vorn der Sprecher, hinten
+    // läuft die Spur aus.
+    stufen.push(`rgba(229, 160, 92, ${(u * u * (halt ? 0.42 : 1)).toFixed(3)}) ${(16 + u * 344).toFixed(1)}deg`);
+  }
+  const innen = R - dick / 2;
+  const aussen = R + dick / 2;
+  const maske =
+    `radial-gradient(circle at 50% 50%, transparent ${(innen - 0.5).toFixed(1)}px, #000 ${(innen + 0.5).toFixed(1)}px, ` +
+    `#000 ${(aussen - 0.5).toFixed(1)}px, transparent ${(aussen + 0.5).toFixed(1)}px)`;
+  div.style.background =
+    `conic-gradient(from ${((360 / n) * wer).toFixed(1)}deg at 50% 50%, ` +
+    `rgba(229, 160, 92, 0) 0deg, rgba(229, 160, 92, 0) 16deg, ${stufen.join(", ")})`;
+  div.style.webkitMask = maske;
+  div.style.mask = maske;
+  return div;
+}
+
+// Die kleine Spitze unten an der Bahn zeigt, wohin der Redestab wandert.
+function marke({ S, R }) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "marke");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "12");
+  svg.setAttribute("viewBox", "0 0 16 12");
+  svg.setAttribute("aria-hidden", "true");
+  svg.style.left = `${(S / 2 - 8).toFixed(1)}px`;
+  svg.style.top = `${(S / 2 + R - 6).toFixed(1)}px`;
+  const pfad = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  pfad.setAttribute("d", "M11 1 L4 6 L11 11 Z");
+  pfad.setAttribute("fill", "#e5a05c");
+  svg.append(pfad);
   return svg;
 }
 
@@ -491,12 +541,19 @@ function uhrStellen() {
 // --- Der Platz des Sprechers atmet mit dem Pegel --------------------------
 
 let pegelZiel = 0;
-function pulsSetzen(rms = pegelZiel) {
-  pegelZiel = state?.angehalten ? 0 : Math.max(pegelZiel * 0.55, Math.min(1, rms * 7));
+
+// Der Pegel kommt vom Server, also von dem Gerät, das gerade aufnimmt — so
+// atmet der Platz auf allen Geräten im Kreis gleich.
+function pegelGemeldet(rms) {
+  pegelZiel = !state?.aktiv || state.angehalten ? 0 : Math.max(pegelZiel * 0.55, Math.min(1, rms * 7));
+  pulsSetzen();
+}
+
+function pulsSetzen() {
   const platz = state?.dran ? platzNodes.get(state.dran) : null;
   const av = platz?.querySelector(".av");
   if (!av) return;
-  const stufe = pegelZiel;
+  const stufe = state?.angehalten ? 0 : pegelZiel;
   av.style.transform = `scale(${(1 + stufe * 0.09).toFixed(3)})`;
   av.style.boxShadow =
     `0 0 0 ${(6 + stufe * 6).toFixed(1)}px rgba(229, 160, 92, ${(0.1 + stufe * 0.03).toFixed(3)}), ` +
@@ -766,7 +823,7 @@ verbinden(async (m) => {
   if (m.typ === "beigetreten") return beigetreten(m);
   if (m.typ === "live" && state) {
     state.aktiv = m.aktiv;
-    pulsSetzen(m.pegel ?? 0);
+    pegelGemeldet(m.pegel ?? 0);
     return zeichneLive();
   }
   if (m.typ !== "state") return;
