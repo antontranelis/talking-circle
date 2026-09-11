@@ -279,7 +279,7 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
 }
 @media (prefers-reduced-motion: reduce) {
   .tippt i { animation: none; opacity: 0.55; }
-  .platz .av { transition: none; }
+  .platz .av, .balken i, .schalter i { transition: none; }
 }
 
 /* --- Die Ecke unten links: ein Punkt, drei Zustände --- */

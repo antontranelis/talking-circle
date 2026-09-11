@@ -7,7 +7,7 @@ let state = null;
 let audio = null;
 let meineKennung = null;
 let uhrTimer = null;
-let gongGespielt = false; // je Beitrag höchstens ein Gong
+let gongFuer = null; // für welchen Beitrag der Gong schon lief
 
 // Wer an diesem Gerät sitzt. Die Namen bleiben im Browser, damit nach einem
 // Neuladen niemand von Hand wieder beitreten muss.
@@ -204,8 +204,10 @@ function ringMasse() {
   const S = Math.max(200, Math.min(breite, hoehe, 620));
   // Der Platz darf nicht größer werden, als der Abstand auf der Bahn zulässt.
   // Am Telefon darf der Platz nicht unter Fingergröße fallen, am Beamer nicht
-  // ins Riesige wachsen.
-  const grob = Math.max(44, Math.min(72, S * 0.15));
+  // ins Riesige wachsen. Ohne Text ist der Kreis das einzige Bild im Raum —
+  // dann dürfen die Plätze größer werden.
+  const fokus = document.body.classList.contains("ohne-text");
+  const grob = Math.max(44, Math.min(fokus ? 96 : 72, S * (fokus ? 0.19 : 0.15)));
   const abstand = (2 * Math.PI * ((S - grob - 26) / 2)) / n;
   const av = Math.max(30, Math.min(grob, abstand * 0.72));
   return { S, av, R: (S - av - 26) / 2, n, abstand };
@@ -511,7 +513,7 @@ function uhrStellen() {
   if (!state.aktiv) {
     clearInterval(uhrTimer);
     uhrTimer = null;
-    gongGespielt = false;
+    gongFuer = null;
     $("uhr").textContent = "00:00";
     $("uhr-grenze").textContent = grenze ? mmss(grenze) : "";
     $("balken").style.width = "0%";
@@ -521,6 +523,7 @@ function uhrStellen() {
   }
 
   if (!uhrTimer) uhrTimer = setInterval(uhrStellen, 1000);
+  const aktiv = state.aktiv;
   const ms = verstrichen();
   const rest = grenze - ms;
   $("uhr").textContent = mmss(ms);
@@ -538,8 +541,8 @@ function uhrStellen() {
           ? "zeitstrahl bald"
           : "zeitstrahl";
   document.body.classList.toggle("zeit-um", Boolean(grenze) && rest <= 0);
-  if (grenze && rest <= 0 && !gongGespielt && !state.angehalten) {
-    gongGespielt = true;
+  if (grenze && rest <= 0 && gongFuer !== aktiv.begonnen && !state.angehalten) {
+    gongFuer = aktiv.begonnen;
     // Es gongt das Gerät, das den Ton liefert — dort steht das Mikrofon im
     // Raum. Wer das nicht will, schaltet es in den Einstellungen ab.
     if (gongErlaubt() && ichNehmeAuf()) gong();
@@ -929,7 +932,8 @@ document.addEventListener("click", (ev) => {
 // wird weiter, der Text ist nur nicht zu sehen.
 function fokusSetzen(an) {
   document.body.classList.toggle("ohne-text", an);
-  $("fokus").firstChild.textContent = an ? "Mit Text" : "Nur Sprecher";
+  $("fokus").querySelector(".wort").textContent = an ? "Mit Text" : "Nur Sprecher";
+  $("mit-text").hidden = !an;
   try {
     localStorage.setItem("redekreis.fokus", an ? "1" : "0");
   } catch {}
@@ -939,11 +943,19 @@ $("fokus").onclick = () => {
   fokusSetzen(!document.body.classList.contains("ohne-text"));
   menueZeigen(false);
 };
+$("mit-text").onclick = () => fokusSetzen(false);
 
+function vollbildUmschalten() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
 $("vollbild").onclick = () => {
-  document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  vollbildUmschalten();
   menueZeigen(false);
 };
+document.addEventListener("fullscreenchange", () => {
+  $("vollbild").querySelector(".wort").textContent = document.fullscreenElement ? "Vollbild beenden" : "Vollbild";
+});
 
 // --- Kreis oder Text: zwei Vollansichten am Telefon -----------------------
 
@@ -987,7 +999,9 @@ document.addEventListener("keydown", (ev) => {
     else if (!$("menue").hidden) menueZeigen(false);
     else beenden();
   } else if (ev.key === "f") {
-    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    vollbildUmschalten();
+  } else if (ev.key === "p") {
+    anhalten();
   }
 });
 

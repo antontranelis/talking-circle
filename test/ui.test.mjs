@@ -358,3 +358,32 @@ test("Die Einstellungen stehen im Sheet — die eigene Seite ist weg", async (t)
   await a.seite.click("#einst-namen .name button");
   await a.seite.waitForFunction(() => document.querySelectorAll("#runde .platz").length === 0);
 });
+
+test("Nur Sprecher gibt dem Kreis die ganze Fläche — und der Weg zurück steht im Kopf", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 6);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  const a = await geraet(browser, PORT + 6);
+  await trittBei(a.seite, "Anton");
+  const platzGroesse = () =>
+    a.seite.evaluate(() => document.querySelector("#runde .platz .av").getBoundingClientRect().width);
+  const vorher = await platzGroesse();
+  assert.equal(await a.seite.isVisible(".verlauf"), true);
+
+  await a.seite.click("#mehr");
+  await a.seite.click("#fokus");
+  await a.seite.waitForSelector(".verlauf", { state: "hidden" });
+  assert.ok((await platzGroesse()) > vorher, "die Plätze sind im Fokus nicht gewachsen");
+  // Zurück geht es ohne Umweg über das Menü.
+  assert.equal(await a.seite.isVisible("#mit-text"), true, "der Weg zurück fehlt im Kopf");
+
+  // Und er hält über das Neuladen.
+  await a.seite.reload({ waitUntil: "networkidle" });
+  await a.seite.waitForSelector(".verlauf", { state: "hidden" });
+  await a.seite.click("#mit-text");
+  await a.seite.waitForSelector(".verlauf", { state: "visible" });
+  assert.equal(await a.seite.isVisible("#mit-text"), false);
+});
