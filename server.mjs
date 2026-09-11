@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import { Circle } from "./circle.mjs";
+import { Protokollbuch } from "./editor.mjs";
 import { alsMarkdown } from "./protokoll.mjs";
 import {
   benenneUm,
@@ -13,6 +14,7 @@ import {
   historie,
   ladeRunde,
   loesche,
+  merkeStand,
   nimmZurueck,
   speichereMarkdown,
   stelleWiederHer,
@@ -83,8 +85,27 @@ const live = () => ({ typ: "live", aktiv: circle.state.aktiv, pegel: circle.pege
 
 const circle = new Circle({
   onChange: (art) => {
+    // Erst ins Protokollbuch, dann auf die Bildschirme: Was die Erkennung
+    // festgeschrieben hat, soll im Text stehen, bevor die Ansicht es zeigt.
+    if (art !== "pegel") buch?.nachziehen();
     if (art === "live" || art === "pegel") sendeAllen(live());
     else sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+  },
+});
+
+// Das gemeinsame Protokoll der laufenden Runde. Änderungen daran fließen über
+// dieselbe Leitung wie alles andere.
+const buch = new Protokollbuch(circle, {
+  onUpdate: (update, herkunft) => {
+    const roh = JSON.stringify({ typ: "ydoc", update: Buffer.from(update).toString("base64") });
+    for (const ws of clients) {
+      if (ws !== herkunft && ws.readyState === ws.OPEN) ws.send(roh);
+    }
+  },
+  // Eine Übernahme ist eine Bearbeitung wie im Archiv — der Stand davor bleibt.
+  onUebernahme: (beschreibung) => {
+    circle.sichern();
+    merkeStand(circle.state.id, "bearbeitet", beschreibung);
   },
 });
 
@@ -203,6 +224,22 @@ const server = http.createServer(async (req, res) => {
     return res.end(alsMarkdown(runde, url.searchParams.get("tz") ?? undefined));
   }
 
+  // Yjs und lib0 kommen unverändert aus node_modules — eine Einfuhrkarte in
+  // index.html zeigt darauf, damit es keinen Bauschritt braucht.
+  if (url.pathname.startsWith("/lib/")) {
+    const rest = url.pathname.slice("/lib/".length);
+    const wurzel = path.join(import.meta.dirname, "node_modules");
+    const ziel = path.join(wurzel, rest === "yjs.mjs" ? "yjs/dist/yjs.mjs" : rest);
+    const datei = /\.(m?js)$/.test(ziel) ? ziel : `${ziel}.js`;
+    const erlaubt = [path.join(wurzel, "yjs"), path.join(wurzel, "lib0")];
+    if (!erlaubt.some((v) => datei.startsWith(v + path.sep)) || !fs.existsSync(datei)) {
+      res.writeHead(404);
+      return res.end("nicht gefunden");
+    }
+    res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });
+    return fs.createReadStream(datei).pipe(res);
+  }
+
   const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const datei = path.join(PUBLIC, rel);
   if (!datei.startsWith(PUBLIC) || !fs.existsSync(datei)) {
@@ -219,6 +256,7 @@ wss.on("connection", (ws) => {
   ws.kennung = ++naechsteKennung;
   clients.add(ws);
   ws.send(JSON.stringify({ typ: "du", kennung: ws.kennung }));
+  ws.send(JSON.stringify({ typ: "ydoc", stand: Buffer.from(buch.stand()).toString("base64") }));
   // Ein Gerät mehr im Raum: Das gehört in die Geräteliste aller Ansichten.
   sendeAllen({ typ: "state", state: zustandMitAufnahme() });
 
@@ -281,6 +319,27 @@ wss.on("connection", (ws) => {
           break;
         case "neueRunde":
           await circle.neueRunde();
+          buch.neuAufsetzen();
+          break;
+        // Das Protokollbuch: eine Änderung von einem Gerät.
+        case "ydoc":
+          buch.vonAussen(new Uint8Array(Buffer.from(String(m.update), "base64")), ws);
+          break;
+        // Wo der andere gerade schreibt — nur zum Zusehen, nichts wird gemerkt.
+        case "cursor":
+          for (const anderer of clients) {
+            if (anderer !== ws && anderer.readyState === anderer.OPEN) {
+              anderer.send(
+                JSON.stringify({
+                  typ: "cursor",
+                  kennung: ws.kennung,
+                  name: String(m.name ?? "").slice(0, 60),
+                  farbe: String(m.farbe ?? "#e5a05c").slice(0, 24),
+                  index: Number(m.index) || 0,
+                }),
+              );
+            }
+          }
           break;
         case "setzen":
           circle.setzen(m);
@@ -299,11 +358,16 @@ wss.on("connection", (ws) => {
         case "fortsetzen":
           circle.fortsetzen();
           break;
+        // Ein einzelner Beitrag ändert sich außerhalb des Protokollbuchs —
+        // dann wird es neu geschrieben, sonst holte die nächste Übernahme den
+        // alten Stand zurück.
         case "aendern":
           circle.beitragAendern(m.index, m);
+          buch.neuAufsetzen();
           break;
         case "loeschen":
           circle.beitragLoeschen(m.index);
+          buch.neuAufsetzen();
           break;
       }
     } catch (err) {
@@ -324,6 +388,7 @@ wss.on("connection", (ws) => {
     // Ein Gerät, das geht, kommt mit neuer Kennung wieder — die Festlegung
     // darf nicht auf eine tote Nummer zeigen.
     if (aufnahmeWahl === ws.kennung) aufnahmeWahl = null;
+    sendeAllen({ typ: "cursor", kennung: ws.kennung, weg: true });
     sendeAllen({ typ: "state", state: zustandMitAufnahme() });
   });
 });

@@ -328,6 +328,47 @@ export class Circle {
 
   // --- Bearbeiten ---------------------------------------------------------
 
+  // Was im Protokollbuch steht, gilt: Titel, Beiträge und der laufende Beitrag
+  // werden übernommen, wie sie dort stehen.
+  async uebernehmen({ titel, beitraege, laufend }) {
+    if (typeof titel === "string" && titel.trim()) this.state.titel = titel.trim();
+    if (Array.isArray(beitraege)) this.state.beitraege = beitraege;
+    if (this.state.aktiv && laufend) await this.neuFassen(laufend.text, laufend.sprecher);
+    this.sichern();
+    this.#onChange("state");
+  }
+
+  // Der laufende Beitrag wird neu gefasst. Der Erkennungsstrom fängt dabei von
+  // vorn an — sonst hinge sein bisheriger Text ein zweites Mal hinter der
+  // Korrektur, sobald das nächste Wort festgeschrieben wird.
+  async neuFassen(text, sprecher) {
+    const aktiv = this.state.aktiv;
+    if (!aktiv) return false;
+    if (typeof sprecher === "string" && sprecher.trim()) aktiv.sprecher = sprecher.trim();
+    aktiv.vorher = String(text ?? "").trim();
+    aktiv.committed = aktiv.vorher;
+    aktiv.tentative = "";
+    const stream = this.#stream;
+    if (!stream) return true;
+    this.#stream = null;
+    try {
+      await stream.finalize();
+    } catch (err) {
+      console.error("Finalisieren beim Neufassen fehlgeschlagen:", err.message);
+    }
+    try {
+      stream.reset();
+    } catch {}
+    if (this.state.aktiv !== aktiv || !this.#session) return true;
+    this.#stream = await this.#session.stream({
+      language: this.state.sprache,
+      commitPolicy: "stable_prefix",
+      family: { kind: "parakeet", attContextRight: this.state.attContextRight },
+    });
+    return true;
+  }
+
+
   beitragAendern(index, { text, sprecher }) {
     const b = this.state.beitraege[index];
     if (!b) return;

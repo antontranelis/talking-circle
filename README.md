@@ -115,10 +115,34 @@ Einstellungen, Protokoll laden, Archiv, Nur Sprecher, Vollbild, Neue Runde.
 - **Neue Runde** schließt das Protokoll ab und fängt leer an. Der Kreis bleibt
   bestehen, das Mikrofon liegt wieder in der Mitte. Die alte Runde bleibt als
   eigene Datei liegen.
-- Beiträge im Verlauf lassen sich direkt anklicken und korrigieren.
+- **Der Stift** über dem Verlauf macht aus ihm das Protokoll: ein Markdown-Text,
+  an dem alle Geräte zugleich schreiben.
 
 Der Live-Text zeigt zwei Zustände: heller Text steht fest, grauer Text ist die
 noch schwankende Vermutung des Modells.
+
+## Gemeinsam am Protokoll schreiben
+
+Der **Stift** oben rechts über dem Verlauf klappt das ganze Protokoll auf —
+denselben Text, den auch das Archiv zeigt: `# Titel`, dann je Beitrag
+`## Name · 14:37` und darunter, was gesagt wurde. Alle Geräte schreiben darin
+zugleich; wer mitschreibt, zeigen die farbigen Zeiger mit Namensfähnchen. Der
+**Haken** an derselben Stelle beendet das Bearbeiten.
+
+Es gibt keinen Speichern-Knopf. Der Server liest den Text gedrosselt zurück und
+übernimmt ihn in die Runde — Titel, Beiträge und den, der gerade spricht. Jede
+Übernahme legt den Stand davor in den **Verlauf der Runde**; im Archiv lässt sie
+sich einzeln zurücknehmen.
+
+Zwei Richtungen treffen sich in diesem Text, und sie kommen sich nicht in die
+Quere: Was die Erkennung festschreibt, hängt sie **immer ans Ende** — auch wenn
+jemand gerade weiter oben tippt. Nur der vorläufige Text steht gedimmt und
+unantastbar hinter dem Dokument, bis er fest wird.
+
+Technisch ist das ein [Yjs](https://yjs.dev)-Dokument, das über dieselbe
+WebSocket-Leitung fließt wie alles andere. Yjs kommt unverändert aus
+`node_modules` (`/lib/…`, eine Einfuhrkarte in `index.html` zeigt darauf) — es
+gibt weiterhin keinen Bauschritt.
 
 ## Redezeit
 
@@ -291,6 +315,7 @@ das Mikrofon sonst sperren; für alle anderen braucht es HTTPS.
 | `public/index.html`, `kreis.js` | Die laufende Runde: Bühne links, Verlauf rechts |
 | `public/verbindung.js` | Gemeinsame WebSocket-Leitung beider Seiten |
 | `protokoll.mjs` | Eine Runde als Markdown — und aus Markdown zurück |
+| `editor.mjs` | Das Protokollbuch: ein Yjs-Text, an dem alle zugleich schreiben |
 | `archiv.mjs` | Gespeicherte Runden: bearbeiten, umbenennen, löschen, Historie |
 | `public/pcm-worklet.js` | Nimmt 16-kHz-Mono in 128-ms-Blöcken ab |
 
@@ -317,6 +342,10 @@ Rauschen schickt. Geprüft werden alle drei Fälle — zwei Geräte, zwei Mensch
 einem Gerät, und der Dranseiende ohne Verbindung. `test/kreis.test.mjs` prüft
 den Kreis selbst, ohne Modell: Beitritt, Wiederkommen ohne Doppelgänger, die
 Reihenfolge über Abwesende hinweg und die Karenzzeit beim Gehen.
+
+`test/editor.test.mjs` prüft das Protokollbuch ohne Server: den Weg vom Zustand
+ins Markdown und zurück, das Anhängen der Erkennung während jemand oben tippt,
+und dass zwei Geräte denselben Text sehen.
 
 `test/ui.test.mjs` geht den Weg, den ein Mensch wirklich geht: zwei Browser als
 zwei Geräte, Namen ins Feld tippen, beitreten, **Leertaste** — und prüft, dass

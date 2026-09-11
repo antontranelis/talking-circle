@@ -6,6 +6,11 @@
   <title>Redekreis</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2712%27 fill=%27none%27 stroke=%27%23e5a05c%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%274%27 r=%274%27 fill=%27%23e5a05c%27/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Yjs kommt unverändert aus node_modules; die Einfuhrkarte zeigt darauf,
+       damit es keinen Bauschritt braucht. -->
+  <script type="importmap">
+    { "imports": { "yjs": "/lib/yjs.mjs", "lib0/": "/lib/lib0/" } }
+  </script>
 </head>
 <body class="seite-kreis ansicht-kreis">
   <header class="kopf">
@@ -200,11 +205,20 @@
         <span id="anzahl" class="anzahl"></span>
       </div>
       <div class="verlauf-feld">
-        <button id="stift" class="btn stift" type="button" title="Protokoll bearbeiten — kommt noch" disabled>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z" /><path d="M14.5 5.5 18.5 9.5" /></svg>
+        <button id="stift" class="btn stift" type="button" aria-label="Protokoll bearbeiten" title="Protokoll bearbeiten">
+          <svg id="ikon-stift" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z" /><path d="M14.5 5.5 18.5 9.5" /></svg>
+          <svg id="ikon-haken" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M5 12.5 10 17.5 19 7" /></svg>
         </button>
         <div class="verlauf-schleier"></div>
         <ol id="beitraege"></ol>
+
+        <div id="editor" class="editor" hidden>
+          <div class="editor-feld">
+            <div id="editor-spiegel" class="spiegel mono" aria-hidden="true"></div>
+            <textarea id="editor-feld" class="mono" spellcheck="false" aria-label="Protokoll bearbeiten"></textarea>
+          </div>
+          <p id="editor-offen" class="editor-offen mono"></p>
+        </div>
       </div>
     </aside>
   </main>

@@ -620,13 +620,11 @@ function eintrag(b, i) {
   weg.onclick = () => sende({ typ: "loeschen", index: i });
   kopf.append(weg);
 
+  // Geändert wird im Protokoll unter dem Stift, nicht in der Zeile — sonst
+  // gäbe es zwei Wege zum selben Text.
   const was = document.createElement("p");
   was.className = "was";
-  was.contentEditable = "plaintext-only";
   was.textContent = b.text;
-  was.onblur = () => {
-    if (was.textContent !== b.text) sende({ typ: "aendern", index: i, text: was.textContent });
-  };
 
   li.append(kopf, was);
   return li;
@@ -704,6 +702,190 @@ function zeichneAufnahme() {
   knopf.className = `rec-griff ${ichNehmeAuf() ? "hier" : state.aufnahmeVon === null ? "" : "fremd"}${gedimmt}`;
   knopf.title = titel;
   knopf.setAttribute("aria-label", titel);
+}
+
+
+// --- Das Protokollbuch: gemeinsam am Text schreiben -----------------------
+//
+// Der Stift oben rechts macht aus dem Verlauf das Protokoll. Alle Geräte
+// schreiben in dasselbe Dokument; der Server liest es gedrosselt zurück in die
+// Runde. Der vorläufige Text der Erkennung hängt gedimmt dahinter — er gehört
+// noch niemandem.
+
+let Y = null;
+let ydoc = null;
+let ytext = null;
+const wartendeUpdates = [];
+let editorOffen = false;
+let letzterCursor = 0;
+
+const ausBase64 = (roh) => Uint8Array.from(atob(roh), (z) => z.charCodeAt(0));
+function zuBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+// Die Farbe eines Menschen bleibt dieselbe, solange sein Name derselbe ist.
+const FARBEN = ["#e5a05c", "#8fb3a0", "#c98f8f", "#9fa8d0", "#cbb26a", "#a2c08a"];
+function farbeVon(name) {
+  let summe = 0;
+  for (const z of String(name)) summe = (summe * 31 + z.codePointAt(0)) % 9973;
+  return FARBEN[summe % FARBEN.length];
+}
+const meinName = () => kreis().find((t) => meineIds.has(t.id))?.name ?? "Gast";
+
+const yBereit = (async () => {
+  Y = await import("yjs");
+  ydoc = new Y.Doc();
+  ytext = ydoc.getText("protokoll");
+  ydoc.on("update", (update, herkunft) => {
+    if (herkunft !== "server") sende({ typ: "ydoc", update: zuBase64(update) });
+  });
+  ytext.observe(fernAenderung);
+  for (const roh of wartendeUpdates.splice(0)) Y.applyUpdate(ydoc, roh, "server");
+})().catch((err) => melden(`Das gemeinsame Protokoll ließ sich nicht laden: ${err.message}`, true));
+
+function ydocEmpfangen(m) {
+  const roh = ausBase64(m.stand ?? m.update);
+  if (!ydoc) return void wartendeUpdates.push(roh);
+  Y.applyUpdate(ydoc, roh, "server");
+}
+
+// Eine Änderung von einem anderen Gerät: Text nachziehen, den eigenen
+// Schreibzeiger mitnehmen.
+function fernAenderung(ev, vorgang) {
+  if (vorgang.origin === "lokal" || !editorOffen) return;
+  const feld = $("editor-feld");
+  const verschoben = (pos) => {
+    let alt = 0;
+    let neu = pos;
+    for (const teil of ev.delta) {
+      if (teil.retain) alt += teil.retain;
+      else if (typeof teil.insert === "string") {
+        if (alt <= pos) neu += teil.insert.length;
+      } else if (teil.delete) {
+        if (alt < pos) neu -= Math.min(teil.delete, pos - alt);
+        alt += teil.delete;
+      }
+    }
+    return Math.max(0, neu);
+  };
+  const von = feld.selectionStart;
+  const bis = feld.selectionEnd;
+  const stand = feld.scrollTop;
+  feld.value = ytext.toString();
+  feld.setSelectionRange(verschoben(von), verschoben(bis));
+  feld.scrollTop = stand;
+  spiegelZeichnen();
+}
+
+function editorSetzen(an) {
+  editorOffen = an;
+  $("editor").hidden = !an;
+  $("beitraege").hidden = an;
+  // Der Editor ist das ganze Protokoll — ohne Kopfzeile darüber.
+  document.querySelector(".verlauf-kopf").hidden = an;
+  $("stift").classList.toggle("an", an);
+  $("stift").title = an ? "Bearbeiten beenden" : "Protokoll bearbeiten";
+  $("stift").setAttribute("aria-label", $("stift").title);
+  $("ikon-stift").toggleAttribute("hidden", an);
+  $("ikon-haken").toggleAttribute("hidden", !an);
+  if (!an) return;
+  $("editor-feld").value = ytext?.toString() ?? "";
+  offenenTextZeigen();
+  spiegelZeichnen();
+  $("editor-feld").focus();
+}
+
+$("stift").onclick = async () => {
+  await yBereit;
+  editorSetzen(!editorOffen);
+};
+
+// Was getippt wird, geht als Unterschied ins gemeinsame Dokument — nur das
+// Stück, das sich geändert hat, sonst stolperten zwei Schreibende übereinander.
+$("editor-feld").oninput = () => {
+  const neu = $("editor-feld").value;
+  const alt = ytext.toString();
+  if (neu === alt) return;
+  let vorn = 0;
+  while (vorn < alt.length && vorn < neu.length && alt[vorn] === neu[vorn]) vorn++;
+  let hinten = 0;
+  while (
+    hinten < alt.length - vorn &&
+    hinten < neu.length - vorn &&
+    alt[alt.length - 1 - hinten] === neu[neu.length - 1 - hinten]
+  ) {
+    hinten++;
+  }
+  ydoc.transact(() => {
+    if (alt.length - vorn - hinten > 0) ytext.delete(vorn, alt.length - vorn - hinten);
+    if (neu.length - vorn - hinten > 0) ytext.insert(vorn, neu.slice(vorn, neu.length - hinten));
+  }, "lokal");
+  spiegelZeichnen();
+  cursorMelden();
+};
+
+document.addEventListener("selectionchange", () => {
+  if (editorOffen && document.activeElement === $("editor-feld")) cursorMelden();
+});
+$("editor-feld").addEventListener("scroll", () => {
+  $("editor-spiegel").scrollTop = $("editor-feld").scrollTop;
+});
+
+let cursorUhr = 0;
+function cursorMelden() {
+  const jetzt = Date.now();
+  const wo = $("editor-feld").selectionStart;
+  if (wo === letzterCursor && jetzt - cursorUhr < 2000) return;
+  if (jetzt - cursorUhr < 150) return;
+  cursorUhr = jetzt;
+  letzterCursor = wo;
+  sende({ typ: "cursor", name: meinName(), farbe: farbeVon(meinName()), index: wo });
+}
+
+// Die Zeiger der anderen: Fähnchen in ihrer Farbe, auf dem Spiegel hinter dem
+// Eingabefeld.
+const fremdeZeiger = new Map();
+function zeigerEmpfangen(m) {
+  if (m.weg) fremdeZeiger.delete(m.kennung);
+  else fremdeZeiger.set(m.kennung, { name: m.name, farbe: m.farbe, index: m.index, zeit: Date.now() });
+  if (editorOffen) spiegelZeichnen();
+}
+
+function spiegelZeichnen() {
+  const spiegel = $("editor-spiegel");
+  const text = $("editor-feld").value;
+  const jetzt = Date.now();
+  const zeiger = [...fremdeZeiger.values()]
+    .filter((z) => jetzt - z.zeit < 60_000)
+    .sort((a, b) => a.index - b.index);
+  spiegel.replaceChildren();
+  let stelle = 0;
+  for (const z of zeiger) {
+    const bis = Math.max(0, Math.min(text.length, z.index));
+    if (bis < stelle) continue;
+    spiegel.append(document.createTextNode(text.slice(stelle, bis)));
+    const marke = document.createElement("span");
+    marke.className = "marke-cursor";
+    marke.style.background = z.farbe;
+    const fahne = document.createElement("span");
+    fahne.style.background = z.farbe;
+    fahne.textContent = z.name;
+    marke.append(fahne);
+    spiegel.append(marke);
+    stelle = bis;
+  }
+  spiegel.append(document.createTextNode(text.slice(stelle)));
+  spiegel.scrollTop = $("editor-feld").scrollTop;
+}
+
+// Der vorläufige Text gehört noch niemandem: Er steht gedimmt hinter dem
+// Dokument und lässt sich nicht anfassen.
+function offenenTextZeigen() {
+  if (!editorOffen) return;
+  $("editor-offen").textContent = state?.aktiv?.tentative ?? "";
 }
 
 // --- Einstellungen: ein Blatt über dem Kreis ------------------------------
@@ -1024,9 +1206,12 @@ verbinden(async (m) => {
     return;
   }
   if (m.typ === "beigetreten") return beigetreten(m);
+  if (m.typ === "ydoc") return ydocEmpfangen(m);
+  if (m.typ === "cursor") return zeigerEmpfangen(m);
   if (m.typ === "live" && state) {
     state.aktiv = m.aktiv;
     pegelGemeldet(m.pegel ?? 0);
+    offenenTextZeigen();
     return zeichneLive();
   }
   if (m.typ !== "state") return;

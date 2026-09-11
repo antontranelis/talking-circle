@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "transcribe-cpp": "^0.2.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0"

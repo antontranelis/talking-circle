@@ -387,3 +387,57 @@ test("Nur Sprecher gibt dem Kreis die ganze Fläche — und der Weg zurück steh
   await a.seite.waitForSelector(".verlauf", { state: "visible" });
   assert.equal(await a.seite.isVisible("#mit-text"), false);
 });
+
+test("Der Stift macht aus dem Verlauf das Protokoll — und beide Geräte schreiben darin", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 7);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  const a = await geraet(browser, PORT + 7);
+  const b = await geraet(browser, PORT + 7);
+  await trittBei(a.seite, "Anton");
+  await trittBei(b.seite, "Eva");
+
+  await a.seite.click("#stift");
+  await a.seite.waitForSelector("#editor-feld", { state: "visible" });
+  const anfang = await a.seite.inputValue("#editor-feld");
+  assert.match(anfang, /^# /, "im Protokoll steht kein Titel");
+
+  // Anton trägt einen Beitrag von Hand nach.
+  await a.seite.click("#editor-feld");
+  await a.seite.keyboard.press("Control+End");
+  await a.seite.keyboard.type("\n## Eva · 10:00\n\nVon Hand nachgetragen.\n");
+
+  // Eva sieht denselben Text.
+  await b.seite.click("#stift");
+  await b.seite.waitForSelector("#editor-feld", { state: "visible" });
+  await b.seite.waitForFunction(
+    () => document.getElementById("editor-feld").value.includes("Von Hand nachgetragen."),
+    null,
+    { timeout: 8000 },
+  );
+
+  // Und der Kreis übernimmt ihn, ohne dass jemand speichert.
+  await b.seite.click("#stift"); // zurück zum Verlauf
+  await b.seite.waitForFunction(
+    () => [...document.querySelectorAll("#beitraege .was")].some((e) => e.textContent.includes("Von Hand nachgetragen.")),
+    null,
+    { timeout: 15_000 },
+  );
+
+  // Was Eva schreibt, kommt bei Anton an — mitten im Satz.
+  await b.seite.click("#stift");
+  await b.seite.waitForSelector("#editor-feld", { state: "visible" });
+  await b.seite.click("#editor-feld");
+  await b.seite.keyboard.press("Control+End");
+  await b.seite.keyboard.type("Und das hier kam von Eva.");
+  await a.seite.waitForFunction(
+    () => document.getElementById("editor-feld").value.includes("Und das hier kam von Eva."),
+    null,
+    { timeout: 8000 },
+  );
+  const gleich = await a.seite.inputValue("#editor-feld");
+  assert.equal(gleich, await b.seite.inputValue("#editor-feld"), "die beiden Protokolle laufen auseinander");
+});

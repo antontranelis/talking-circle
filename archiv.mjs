@@ -82,6 +82,10 @@ function haltFest(id, aktion, beschreibung, { geloescht = false } = {}) {
   return eintrag;
 }
 
+// Auch die laufende Runde kann bearbeitet werden — im Kreis, im Protokollbuch.
+// Der Stand davor gehört genauso in die Geschichte wie eine Korrektur im Archiv.
+export const merkeStand = (id, aktion, beschreibung) => haltFest(id, aktion, beschreibung);
+
 function standVor(id, nr, { geloescht = false } = {}) {
   return lies(path.join(historieOrdner(id, geloescht), `${String(nr).padStart(4, "0")}.json`));
 }
