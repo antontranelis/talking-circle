@@ -76,6 +76,19 @@ kbd { font: 0.75em/1 ui-monospace, monospace; border: 1px solid currentColor; op
 .runde button { padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.85rem; color: var(--gedimmt); }
 .runde button.dran { background: var(--akzent); color: #221a12; border-color: transparent; font-weight: 600; }
 .runde button.war { color: var(--text); border-color: var(--akzent-weich); }
+/* Gerät zu, aber weiter im Kreis: gedimmt, nicht weg. */
+.runde button.weg { opacity: 0.45; }
+/* Wer an diesem Gerät sitzt, bekommt einen Punkt. */
+.runde button.ich::before { content: "•"; color: var(--akzent); margin-right: 0.35rem; }
+.runde button.dran.ich::before { color: inherit; }
+
+/* Beitritt: Name eintragen, fertig — im Kopf neben dem Kreis. */
+.beitritt { display: flex; gap: 0.4rem; align-items: center; }
+.beitritt input {
+  font: inherit; font-size: 0.85rem; padding: 0.35rem 0.7rem; width: 9rem; border-radius: 999px;
+  border: 1px solid var(--rand); background: var(--flaeche-hoch); color: var(--text);
+}
+.beitritt input::placeholder { color: var(--gedimmt); }
 
 .tafel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem); gap: 1rem; min-height: 0; }
 

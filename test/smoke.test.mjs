@@ -27,6 +27,58 @@ function wavLesen(p) {
   return pcm;
 }
 
+// Jeder Test fährt einen eigenen Server hoch, damit die Runden sich nicht
+// gegenseitig ins Protokoll reden.
+async function starteServer(t, port, zusatz = {}) {
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: WURZEL,
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ...zusatz },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => server.kill("SIGKILL"));
+  await new Promise((ok, fehler) => {
+    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
+    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
+    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
+  });
+  return server;
+}
+
+// Ein Gerät: eine WebSocket-Leitung samt allem, was über sie hereinkommt.
+async function verbinde(port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const eingang = [];
+  ws.on("message", (roh) => eingang.push(JSON.parse(roh.toString())));
+  await new Promise((ok) => ws.on("open", ok));
+  return { ws, eingang };
+}
+
+const warteAuf = async (pruefen, was, ms = 20_000) => {
+  const frist = Date.now() + ms;
+  while (Date.now() < frist) {
+    const ergebnis = pruefen();
+    if (ergebnis) return ergebnis;
+    await new Promise((ok) => setTimeout(ok, 50));
+  }
+  throw new Error(`${was} kam nicht rechtzeitig`);
+};
+
+const letzterZustand = (eingang) => eingang.filter((m) => m.typ === "state").at(-1)?.state;
+
+// Ein Mensch tritt von diesem Gerät aus bei; der Server antwortet mit seiner Kennung.
+async function trittBei(ws, eingang, name) {
+  ws.send(JSON.stringify({ typ: "beitreten", name }));
+  const m = await warteAuf(
+    () => eingang.find((m) => m.typ === "beigetreten" && m.name === name),
+    `Beitritt von ${name}`,
+    5000,
+  );
+  return m.id;
+}
+
+const meineKennung = async (eingang) =>
+  (await warteAuf(() => eingang.find((m) => m.typ === "du"), "eigene Kennung", 5000)).kennung;
+
 test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) => {
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
@@ -56,7 +108,9 @@ test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) 
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton", "Eva"], sprache: "de-DE", titel: "Testrunde" }));
+  ws.send(JSON.stringify({ typ: "setzen", sprache: "de-DE", titel: "Testrunde" }));
+  const anton = await trittBei(ws, zustaende, "Anton");
+  await trittBei(ws, zustaende, "Eva");
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const BLOCK = 2048; // wie das Worklet: 128 ms
@@ -72,7 +126,7 @@ test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) 
   // muss den Satzanfang trotzdem in den Beitrag holen.
   const VORLAUF = 8 * BLOCK; // ~1 s
   await senden(0, VORLAUF);
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "dran", id: anton }));
   await senden(VORLAUF, pcm.length);
 
   // Auf einen Live-Zwischenstand warten — das ist der Sinn der Sache.
@@ -140,9 +194,10 @@ test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", asy
     throw new Error("Zustand kam nicht rechtzeitig");
   };
 
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Erste Runde" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Erste Runde" }));
+  await trittBei(ws, zustaende, "Anton");
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "weiter" }));
   const teil = pcm.subarray(0, 16000 * 4);
   ws.send(Buffer.from(teil.buffer, teil.byteOffset, teil.byteLength));
   ws.send(JSON.stringify({ typ: "stop" }));
@@ -154,7 +209,8 @@ test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", asy
   const zweite = await warten((s) => s.beitraege.length === 0);
   assert.notEqual(zweite.id, erste.id, "die neue Runde übernimmt die alte Kennung");
   assert.equal(zweite.beitraege.length, 0);
-  assert.deepEqual(zweite.teilnehmende, ["Anton"], "die Namen bleiben stehen");
+  assert.deepEqual(zweite.teilnehmende.map((t) => t.name), ["Anton"], "der Kreis bleibt stehen");
+  assert.equal(zweite.dran, null, "die neue Runde fängt ohne Mikrofon an");
   assert.ok(fs.existsSync(protokoll), "das Protokoll der alten Runde wurde weggeräumt");
   assert.ok(!fs.existsSync(path.join(WURZEL, "transcripts", `${zweite.id}.md`)), "leere Runde schreibt eine Datei");
   ws.close();
@@ -180,8 +236,9 @@ test("Ein Export mitten im Beitrag enthält, was gerade gesagt wurde", async (t)
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Mittendrin" }));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Mittendrin" }));
+  await trittBei(ws, zustaende, "Anton");
+  ws.send(JSON.stringify({ typ: "weiter" }));
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const teil = pcm.subarray(0, 16000 * 12);
   for (let i = 0; i < teil.length; i += 2048) {
@@ -243,14 +300,15 @@ test("Eine Runde über viele Übergaben hinweg bleibt sprechfähig", async (t) =
   ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
 
   const namen = ["Anton", "Eva", "Emil", "Agnes", "Timo", "Holger", "Jonathan", "Janosch"];
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: namen, titel: "Lange Runde" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Lange Runde" }));
+  for (const name of namen) await trittBei(ws, zustaende, name);
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const stueck = pcm.subarray(0, 16000 * 5); // fünf Sekunden je Beitrag
 
   const UEBERGABEN = 8;
   for (let n = 0; n < UEBERGABEN; n++) {
-    ws.send(JSON.stringify({ typ: "start", sprecher: namen[n % namen.length] }));
+    ws.send(JSON.stringify({ typ: "weiter" })); // der Reihe nach durch den Kreis
     for (let i = 0; i < stueck.length; i += 2048) {
       const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
       ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
@@ -267,6 +325,7 @@ test("Eine Runde über viele Übergaben hinweg bleibt sprechfähig", async (t) =
 
   const beitraege = zustaende.filter((m) => m.typ === "state").at(-1).state.beitraege;
   assert.equal(beitraege.length, UEBERGABEN, "nicht jede Übergabe hat einen Beitrag ergeben");
+  assert.deepEqual(beitraege.map((b) => b.sprecher), namen, "das Mikrofon ist nicht der Reihe nach gewandert");
   const stumm = beitraege.map((b, i) => [i + 1, b.text]).filter(([, t]) => !/Badeanzug/i.test(t));
   assert.deepEqual(stumm, [], `diese Beiträge blieben ohne Text: ${JSON.stringify(stumm)}`);
   ws.close();
@@ -294,8 +353,9 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät liefert den Ton
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Wachhund" }));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Wachhund" }));
+  await trittBei(ws, zustaende, "Anton");
+  ws.send(JSON.stringify({ typ: "weiter" }));
 
   // Rauschen: hat Pegel, ist aber keine Sprache — das Modell liefert nichts.
   // Der Wachhund muss das als hängenden Strom erkennen. In Echtzeit gefüttert,
@@ -356,19 +416,12 @@ test("Nur das aufnehmende Gerät liefert Ton, Zuschauer stören nicht", async (t
     server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
   });
 
-  const verbinde = async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    const nachrichten = [];
-    ws.on("message", (roh) => nachrichten.push(JSON.parse(roh.toString())));
-    await new Promise((ok) => ws.on("open", ok));
-    return { ws, nachrichten };
-  };
-
-  const aufnehmer = await verbinde();
-  const zuschauer = await verbinde();
+  const aufnehmer = await verbinde(port);
+  const zuschauer = await verbinde(port);
   aufnehmer.ws.send(JSON.stringify({ typ: "aufnehmen" }));
-  aufnehmer.ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Zwei Geräte" }));
-  aufnehmer.ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  aufnehmer.ws.send(JSON.stringify({ typ: "setzen", titel: "Zwei Geräte" }));
+  await trittBei(aufnehmer.ws, aufnehmer.eingang, "Anton");
+  aufnehmer.ws.send(JSON.stringify({ typ: "weiter" }));
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const rauschen = new Float32Array(2048);
@@ -385,7 +438,7 @@ test("Nur das aufnehmende Gerät liefert Ton, Zuschauer stören nicht", async (t
   const frist = Date.now() + 30_000;
   let beitraege = [];
   while (Date.now() < frist) {
-    beitraege = aufnehmer.nachrichten.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
+    beitraege = aufnehmer.eingang.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
     if (beitraege.length) break;
     await new Promise((ok) => setTimeout(ok, 100));
   }
@@ -394,7 +447,7 @@ test("Nur das aufnehmende Gerät liefert Ton, Zuschauer stören nicht", async (t
   assert.match(beitraege[0].text, /Wellen\.?$/i, "der Zuschauer hat die Aufnahme verdorben");
 
   // Und der Zuschauer sieht trotzdem alles mit.
-  const beimZuschauer = zuschauer.nachrichten.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
+  const beimZuschauer = zuschauer.eingang.filter((m) => m.typ === "state").at(-1)?.state.beitraege ?? [];
   assert.equal(beimZuschauer.length, 1, "der Zuschauer sieht die Runde nicht");
   aufnehmer.ws.close();
   zuschauer.ws.close();
@@ -421,8 +474,9 @@ test("Das heruntergeladene Protokoll zeigt die Zeit der eigenen Zeitzone", async
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" }));
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton"], titel: "Zeitzone" }));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Zeitzone" }));
+  await trittBei(ws, zustaende, "Anton");
+  ws.send(JSON.stringify({ typ: "weiter" }));
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const teil = pcm.subarray(0, 16000 * 5);
@@ -473,12 +527,13 @@ test("Jede Runde liegt auch im Zeilenformat des Session-Archivs vor", async (t) 
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" }));
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Agnes", "Emil"], titel: "Archivprobe" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Archivprobe" }));
+  for (const name of ["Agnes", "Emil"]) await trittBei(ws, zustaende, name);
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const teil = pcm.subarray(0, 16000 * 5);
   for (const sprecher of ["Agnes", "Emil"]) {
-    ws.send(JSON.stringify({ typ: "start", sprecher }));
+    ws.send(JSON.stringify({ typ: "weiter" }));
     for (let i = 0; i < teil.length; i += 2048) {
       const block = teil.subarray(i, Math.min(i + 2048, teil.length));
       ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
@@ -530,8 +585,9 @@ test("Das Archiv listet frühere Runden und gibt sie einzeln heraus", async (t) 
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" }));
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Timo"], titel: "Archivrunde" }));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Timo" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Archivrunde" }));
+  await trittBei(ws, zustaende, "Timo");
+  ws.send(JSON.stringify({ typ: "weiter" }));
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const teil = pcm.subarray(0, 16000 * 5);
@@ -592,8 +648,9 @@ test("Protokolle lassen sich über die Schnittstelle korrigieren und zurücknehm
   ws.on("message", (roh) => zustaende.push(JSON.parse(roh.toString())));
   await new Promise((ok) => ws.on("open", ok));
   ws.send(JSON.stringify({ typ: "aufnehmen" }));
-  ws.send(JSON.stringify({ typ: "setzen", teilnehmende: ["Anton", "Eva"], titel: "Korrekturrunde" }));
-  ws.send(JSON.stringify({ typ: "start", sprecher: "Anton" }));
+  ws.send(JSON.stringify({ typ: "setzen", titel: "Korrekturrunde" }));
+  for (const name of ["Anton", "Eva"]) await trittBei(ws, zustaende, name);
+  ws.send(JSON.stringify({ typ: "weiter" }));
 
   const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
   const teil = pcm.subarray(0, 16000 * 6);
@@ -667,4 +724,149 @@ test("Protokolle lassen sich über die Schnittstelle korrigieren und zurücknehm
   await json(`/api/runde/${id}/wiederherstellen`, { method: "POST" });
   assert.ok((await json("/api/runden")).daten.some((r) => r.id === id));
   ws.close();
+});
+
+test("Das Mikrofon wandert auf das Gerät dessen, der dran ist", async (t) => {
+  // Zwei Menschen, zwei Geräte: Beim Weiterreichen muss die Aufnahme mitgehen,
+  // sonst redet der Nächste in ein Mikrofon, das anderswo im Raum liegt.
+  const port = PORT + 10;
+  await starteServer(t, port);
+  const a = await verbinde(port);
+  const b = await verbinde(port);
+  const kennungA = await meineKennung(a.eingang);
+  const kennungB = await meineKennung(b.eingang);
+
+  a.ws.send(JSON.stringify({ typ: "setzen", titel: "Zwei Geräte, zwei Menschen" }));
+  await trittBei(a.ws, a.eingang, "Anton");
+  await trittBei(b.ws, b.eingang, "Eva");
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const stueck = pcm.subarray(0, 16000 * 6);
+  const rauschen = new Float32Array(2048);
+  // Beide Geräte haben ihr Mikrofon offen; nur eines darf zählen.
+  const reden = async (redner, stiller) => {
+    for (let i = 0; i < stueck.length; i += 2048) {
+      const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
+      redner.ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+      for (let k = 0; k < rauschen.length; k++) rauschen[k] = (Math.random() - 0.5) * 0.4;
+      stiller.ws.send(Buffer.from(rauschen.buffer, rauschen.byteOffset, rauschen.byteLength));
+      await new Promise((ok) => setTimeout(ok, 5));
+    }
+  };
+
+  a.ws.send(JSON.stringify({ typ: "weiter" }));
+  await warteAuf(() => letzterZustand(b.eingang)?.aufnahmeVon === kennungA, "Aufnahme auf Antons Gerät");
+  await reden(a, b);
+
+  b.ws.send(JSON.stringify({ typ: "weiter" }));
+  await warteAuf(() => letzterZustand(a.eingang)?.aufnahmeVon === kennungB, "Aufnahme auf Evas Gerät");
+  await reden(b, a);
+  b.ws.send(JSON.stringify({ typ: "stop" }));
+
+  const beitraege = await warteAuf(
+    () => {
+      const liste = letzterZustand(a.eingang)?.beitraege;
+      return liste?.length === 2 ? liste : null;
+    },
+    "beide Beiträge",
+    30_000,
+  );
+  assert.deepEqual(beitraege.map((x) => x.sprecher), ["Anton", "Eva"]);
+  for (const beitrag of beitraege) {
+    assert.match(beitrag.text, /Badeanzug/i, `bei ${beitrag.sprecher} kam der Ton vom falschen Gerät`);
+  }
+  a.ws.close();
+  b.ws.close();
+});
+
+test("Zwei Menschen an einem Gerät: der Sprecher wechselt, die Aufnahme bleibt", async (t) => {
+  // Der alte Fall — ein Mikrofon wandert von Hand — muss ohne jedes Zutun
+  // weiterlaufen: beide sitzen am selben Gerät, also nimmt es durchgehend auf.
+  const port = PORT + 11;
+  await starteServer(t, port);
+  const geraet = await verbinde(port);
+  const kennung = await meineKennung(geraet.eingang);
+
+  geraet.ws.send(JSON.stringify({ typ: "setzen", titel: "Ein Gerät, zwei Menschen" }));
+  await trittBei(geraet.ws, geraet.eingang, "Anton");
+  await trittBei(geraet.ws, geraet.eingang, "Eva");
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const stueck = pcm.subarray(0, 16000 * 5);
+  const reden = async () => {
+    for (let i = 0; i < stueck.length; i += 2048) {
+      const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
+      geraet.ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+      await new Promise((ok) => setTimeout(ok, 5));
+    }
+  };
+
+  // Niemand hat „Hier aufnehmen" gedrückt: Die Aufnahme folgt allein daraus,
+  // dass der Dranseiende an diesem Gerät sitzt.
+  geraet.ws.send(JSON.stringify({ typ: "weiter" }));
+  await warteAuf(() => letzterZustand(geraet.eingang)?.aufnahmeVon === kennung, "Aufnahme an diesem Gerät");
+  await reden();
+  geraet.ws.send(JSON.stringify({ typ: "weiter" }));
+  await warteAuf(() => letzterZustand(geraet.eingang)?.aktiv?.sprecher === "Eva", "Übergabe an Eva");
+  assert.equal(letzterZustand(geraet.eingang).aufnahmeVon, kennung, "die Aufnahme ist weggewandert");
+  await reden();
+  geraet.ws.send(JSON.stringify({ typ: "stop" }));
+
+  const beitraege = await warteAuf(
+    () => {
+      const liste = letzterZustand(geraet.eingang)?.beitraege;
+      return liste?.length === 2 ? liste : null;
+    },
+    "beide Beiträge",
+    30_000,
+  );
+  assert.deepEqual(beitraege.map((x) => x.sprecher), ["Anton", "Eva"]);
+  for (const beitrag of beitraege) assert.match(beitrag.text, /Badeanzug/i);
+  geraet.ws.close();
+});
+
+test("Wer kein Gerät mehr hat, bekommt das herumgereichte Mikrofon", async (t) => {
+  // Eva hat ihr Telefon zugeklappt, sitzt aber weiter im Kreis. Wenn sie dran
+  // ist, muss der Ton von dem Gerät kommen, das die Aufnahme in der Hand hat.
+  const port = PORT + 12;
+  await starteServer(t, port);
+  const a = await verbinde(port);
+  const b = await verbinde(port);
+  const kennungA = await meineKennung(a.eingang);
+
+  a.ws.send(JSON.stringify({ typ: "aufnehmen" })); // dieses Gerät hat das Mikrofon
+  a.ws.send(JSON.stringify({ typ: "setzen", titel: "Herumgereicht" }));
+  await trittBei(a.ws, a.eingang, "Anton");
+  const eva = await trittBei(b.ws, b.eingang, "Eva");
+
+  b.ws.close();
+  await warteAuf(
+    () => letzterZustand(a.eingang)?.teilnehmende.find((x) => x.id === eva)?.da === false,
+    "Evas Gerät als getrennt gemeldet",
+  );
+
+  a.ws.send(JSON.stringify({ typ: "dran", id: eva }));
+  await warteAuf(() => letzterZustand(a.eingang)?.aktiv?.sprecher === "Eva", "Übergabe an Eva");
+  assert.equal(letzterZustand(a.eingang).aufnahmeVon, kennungA, "die Aufnahme ist ins Leere gewandert");
+
+  const pcm = wavLesen(path.join(import.meta.dirname, "fixtures", "german.wav"));
+  const stueck = pcm.subarray(0, 16000 * 5);
+  for (let i = 0; i < stueck.length; i += 2048) {
+    const block = stueck.subarray(i, Math.min(i + 2048, stueck.length));
+    a.ws.send(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    await new Promise((ok) => setTimeout(ok, 5));
+  }
+  a.ws.send(JSON.stringify({ typ: "stop" }));
+
+  const beitraege = await warteAuf(
+    () => {
+      const liste = letzterZustand(a.eingang)?.beitraege;
+      return liste?.length === 1 ? liste : null;
+    },
+    "Evas Beitrag",
+    30_000,
+  );
+  assert.equal(beitraege[0].sprecher, "Eva");
+  assert.match(beitraege[0].text, /Badeanzug/i, "der Ton des herumgereichten Mikrofons kam nicht an");
+  a.ws.close();
 });

@@ -76,19 +76,27 @@ Kerne sind die sinnvolle Untergrenze, zwei reichen nur ohne Puffer.
 
 ## Ablauf einer Runde
 
-Beim ersten Aufruf landet ihr auf der **Einrichtung**: Titel, Namen in der
-Reihenfolge des Kreises, Mikrofon, Sprache, Verzögerung. Danach läuft die Runde
-auf einer Seite ohne Scrollen — links, was gerade gesagt wird, rechts der
-Verlauf.
+Die Seite öffnen und **mit dem eigenen Namen beitreten** — mehr braucht es
+nicht. Oben steht ein Namensfeld; wer ihn einträgt, sitzt im Kreis und
+erscheint bei allen als Name in der Reihe. **Noch jemand an diesem Gerät**
+setzt den Nächsten dazu, der am selben Rechner sitzt. Der Browser merkt sich,
+wer an diesem Gerät saß: Nach einem Neuladen sind dieselben Menschen wieder da,
+ohne Doppelgänger im Kreis.
+
+Danach läuft die Runde auf einer Seite ohne Scrollen — links, was gerade gesagt
+wird, rechts der Verlauf.
 
 - **Leertaste** reicht das Mikrofon an die nächste Person weiter: der laufende
-  Beitrag wird abgeschlossen, der neue beginnt. Ein Klick auf einen Namen
-  springt direkt zu dieser Person.
+  Beitrag wird abgeschlossen, der neue beginnt. Wessen Gerät gerade weg ist,
+  wird dabei übersprungen. Ein Klick auf einen Namen springt direkt zu dieser
+  Person.
 - **Esc** beendet den Beitrag, ohne einen neuen zu beginnen.
-- **Einrichtung** ändert Namen, Titel, Mikrofon oder Sprache mitten in der
-  Runde; die bisherigen Beiträge bleiben stehen.
-- **Neue Runde** schließt das Protokoll ab und fängt leer an. Die alte Runde
-  bleibt als eigene Datei liegen.
+- **Einrichtung** ändert Titel, Mikrofon, Sprache, Verzögerung oder Redezeit —
+  auch mitten in der Runde; die bisherigen Beiträge bleiben stehen. Wer im
+  Kreis sitzt, steht dort nicht: Das entscheidet der Beitritt.
+- **Neue Runde** schließt das Protokoll ab und fängt leer an. Der Kreis bleibt
+  bestehen, das Mikrofon liegt wieder in der Mitte. Die alte Runde bleibt als
+  eigene Datei liegen.
 - Beiträge im Verlauf lassen sich direkt anklicken und korrigieren.
 
 Der Live-Text zeigt zwei Zustände: heller Text steht fest, grauer Text ist die
@@ -190,25 +198,40 @@ dem gelesen statt reagiert wird, ist die genaueste Stufe meist die richtige.
 Alle geöffneten Geräte sehen dieselbe Runde live: Sprecher, laufenden Text und
 Verlauf. Weiterreichen und Korrigieren kann jedes davon.
 
-**Den Ton liefert genau ein Gerät.** Wer aufnimmt, steht oben rechts; alle
-anderen sehen dort *„ein anderes Gerät nimmt auf"* und daneben **Aufnahme
-hierher holen** — damit wandert das Mikrofon auf das eigene Gerät, und das
-bisherige hört auf zu senden. Das erste Gerät, das die Seite öffnet, übernimmt
-von selbst. Zuschauer öffnen ihr Mikrofon gar nicht erst.
+**Den Ton liefert genau ein Gerät** — und zwar das Gerät dessen, der das
+Mikrofon gerade hat. Wird weitergereicht, wandert die Aufnahme mit: Das
+bisherige Gerät schließt sein Mikrofon, das nächste öffnet seins. Niemand muss
+etwas umstellen, und im Fuß steht, woran man ist: *„dieses Gerät nimmt auf"*
+oder *„Aufnahme bei Eva"*.
 
 Das ist keine Bequemlichkeit, sondern Bedingung: Vorher schickte jedes offene
 Gerät seinen eigenen Ton in denselben Erkennungsstrom. Zwei Geräte bedeuteten
 gemessen **vierfache Rechenlast** und zerhackten Text bis hin zu gar keinem.
 
-Damit muss das Mikrofon auch nicht mehr physisch herumgehen: Wer dran ist, holt
-die Aufnahme auf sein eigenes Telefon.
+Beide Fälle funktionieren damit ohne Umschalten:
+
+- **Ein Mikrofon wandert herum, alle sitzen an einem Rechner.** Alle treten an
+  diesem Gerät bei, also nimmt es durchgehend auf, egal wer dran ist.
+- **Jeder mit dem eigenen Telefon.** Die Aufnahme folgt dem Mikrofon durch den
+  Kreis.
+
+**Hier aufnehmen** im Fuß holt den Ton von Hand auf das eigene Gerät. Das ist
+der Rückfall für das herumgereichte Mikrofon: Ist der Dranseiende gerade nicht
+verbunden — Telefon zugeklappt, Verbindung weg —, liefert weiter das Gerät, das
+die Aufnahme zuletzt übernommen hat. Bei der nächsten Übergabe gilt wieder die
+Regel, dass das Gerät des Dranseienden aufnimmt.
+
+Geht ein Gerät verloren, bleiben die Menschen daran im Kreis stehen, nur
+gedimmt. Sie werden beim Weiterreichen übersprungen und sind mit demselben
+Namen sofort wieder da, sobald sie neu beitreten.
 
 ## Zweiter Bildschirm
 
 Der Server hört auf allen Schnittstellen (`HOST`, `PORT` setzbar). Weitere
 Geräte im selben Netz können `http://<rechner>:8123` öffnen und sehen dieselbe
-Runde mit — aufnehmen darf allerdings nur der Rechner, der die Seite über
-`localhost` öffnet, weil Browser das Mikrofon sonst sperren.
+Runde mit — beitreten und weiterreichen können sie auch. Aufnehmen kann
+allerdings nur der Rechner, der die Seite über `localhost` öffnet, weil Browser
+das Mikrofon sonst sperren; für alle anderen braucht es HTTPS.
 
 ## Aufbau
 
@@ -217,7 +240,7 @@ Runde mit — aufnehmen darf allerdings nur der Rechner, der die Seite über
 | `server.mjs` | HTTP + WebSocket, verteilt den Zustand an alle Ansichten |
 | `circle.mjs` | Der Kreis: Beiträge, Streaming-Sessions, Protokoll auf Platte |
 | `model.mjs` | Findet die Modelldatei |
-| `public/einrichtung.html/.js` | Eigene Seite für Namen, Mikrofon, Sprache |
+| `public/einrichtung.html/.js` | Eigene Seite für Titel, Mikrofon, Sprache, Redezeit |
 | `public/index.html`, `kreis.js` | Die laufende Runde: Bühne links, Verlauf rechts |
 | `public/verbindung.js` | Gemeinsame WebSocket-Leitung beider Seiten |
 | `protokoll.mjs` | Eine Runde als Markdown — und aus Markdown zurück |
@@ -237,6 +260,13 @@ npm test
 ```
 
 Startet den echten Server, schickt eine Beispielaufnahme über den WebSocket wie
-der Browser es täte und prüft drei Dinge: Live-Text, Satzanfang aus dem Vorlauf
-und vollständiges Beitragsende; eine neue Runde ohne Verlust der alten; einen
-Export mitten im laufenden Beitrag.
+der Browser es täte und prüft den ganzen Weg: Live-Text, Satzanfang aus dem
+Vorlauf und vollständiges Beitragsende; eine neue Runde ohne Verlust der alten;
+einen Export mitten im laufenden Beitrag; Archiv und Korrekturen.
+
+Für den Kreis mit mehreren Geräten laufen zwei Leitungen nebeneinander: Nur der
+Ton vom Gerät des Dranseienden darf im Protokoll landen, während das andere
+Rauschen schickt. Geprüft werden alle drei Fälle — zwei Geräte, zwei Menschen an
+einem Gerät, und der Dranseiende ohne Verbindung. `test/kreis.test.mjs` prüft
+den Kreis selbst, ohne Modell: Beitritt, Wiederkommen ohne Doppelgänger und die
+Reihenfolge über Abwesende hinweg.

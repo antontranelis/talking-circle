@@ -5,9 +5,19 @@ const $ = (id) => document.getElementById(id);
 let state = null;
 let audio = null;
 let meineKennung = null;
-let dranIndex = -1;
 let uhrTimer = null;
 let gongGespielt = false; // je Beitrag höchstens ein Gong
+
+// Wer an diesem Gerät sitzt. Die Namen bleiben im Browser, damit nach einem
+// Neuladen niemand von Hand wieder beitreten muss.
+const SPEICHER = "redekreis.meine";
+const meineIds = new Set();
+let meineNamen = [];
+try {
+  meineNamen = JSON.parse(localStorage.getItem(SPEICHER) ?? "[]").filter((n) => typeof n === "string");
+} catch {
+  meineNamen = [];
+}
 
 // --- Mikrofon ------------------------------------------------------------
 
@@ -33,6 +43,33 @@ async function mikroOeffnen() {
   };
   ctx.createMediaStreamSource(spur).connect(knoten);
   audio = { ctx, spur };
+}
+
+// Das Mikrofon gehört dem Gerät, das gerade aufnimmt. Wandert die Aufnahme
+// weiter, wird es hier geschlossen — sonst hört ein fremder Raum weiter mit.
+function mikroSchliessen() {
+  if (!audio) return;
+  audio.spur.getTracks().forEach((t) => t.stop());
+  audio.ctx.close();
+  audio = null;
+  pegelZiel = 0;
+  pegelZeigen(0);
+}
+
+let mikroLaeuft = false; // ein Aufbau zur Zeit, sonst öffnen sich zwei Ströme
+async function mikroPruefen() {
+  const soll = ichNehmeAuf();
+  if (soll === Boolean(audio) || mikroLaeuft) return;
+  if (!soll) return mikroSchliessen();
+  mikroLaeuft = true;
+  try {
+    await mikroOeffnen();
+    melden("");
+  } catch (err) {
+    melden(`Kein Zugriff aufs Mikrofon: ${err.message}`, true);
+  } finally {
+    mikroLaeuft = false;
+  }
 }
 
 // Ein weicher Zweiklang, wenn die Redezeit voll ist — kein Alarm, ein Hinweis.
@@ -65,21 +102,40 @@ function pegelZeigen(rms) {
 
 // --- Kreislogik ----------------------------------------------------------
 
-const namen = () => state?.teilnehmende ?? [];
+const kreis = () => state?.teilnehmende ?? [];
 
-function weitergeben() {
-  const liste = namen();
-  if (!liste.length) return;
-  dranIndex = (dranIndex + 1) % liste.length;
-  sende({ typ: "start", sprecher: liste[dranIndex] });
+// Wer als Nächstes dran ist, bestimmt der Server: Er kennt alle Geräte und
+// überspringt, wer gerade nicht da ist.
+const weitergeben = () => sende({ typ: "weiter" });
+const anPerson = (id) => sende({ typ: "dran", id });
+const beenden = () => sende({ typ: "stop" });
+
+// --- Beitreten -----------------------------------------------------------
+
+function beitreten(name) {
+  const sauber = name.trim().slice(0, 60);
+  if (!sauber) return;
+  sende({ typ: "beitreten", name: sauber });
 }
 
-const anPerson = (i) => {
-  dranIndex = i;
-  sende({ typ: "start", sprecher: namen()[i] });
-};
+function beigetreten({ id, name }) {
+  meineIds.add(id);
+  if (!meineNamen.includes(name)) {
+    meineNamen.push(name);
+    localStorage.setItem(SPEICHER, JSON.stringify(meineNamen));
+  }
+  zeichneBeitritt();
+  // Sitzt sonst niemand am Ton, übernimmt dieses Gerät die Aufnahme. So geht
+  // der Anfang des ersten Beitrags nicht verloren.
+  if (state?.aufnahmeVon === null) sende({ typ: "aufnehmen" });
+}
 
-const beenden = () => sende({ typ: "stop" });
+// Solange von diesem Gerät niemand im Kreis sitzt, steht das Namensfeld offen;
+// danach reicht ein Knopf für den Nächsten, der sich dazusetzt.
+function zeichneBeitritt(offen = meineIds.size === 0) {
+  $("beitritt").hidden = !offen;
+  $("noch-jemand").hidden = offen || meineIds.size === 0;
+}
 
 // --- Darstellung ---------------------------------------------------------
 
@@ -96,13 +152,16 @@ function zeichnen() {
 function zeichneRunde() {
   const gesprochen = new Set(state.beitraege.map((b) => b.sprecher));
   $("runde").replaceChildren(
-    ...namen().map((name, i) => {
+    ...kreis().map((t) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.textContent = name;
-      if (state.aktiv?.sprecher === name) b.className = "dran";
-      else if (gesprochen.has(name)) b.className = "war";
-      b.onclick = () => anPerson(i);
+      b.textContent = t.name;
+      if (state.dran === t.id) b.classList.add("dran");
+      else if (gesprochen.has(t.name)) b.classList.add("war");
+      if (!t.da) b.classList.add("weg"); // Gerät zu, sitzt aber noch im Kreis
+      if (meineIds.has(t.id)) b.classList.add("ich");
+      b.title = t.da ? "Das Mikrofon hierher geben" : `${t.name} ist gerade nicht verbunden`;
+      b.onclick = () => anPerson(t.id);
       return b;
     }),
   );
@@ -121,7 +180,13 @@ function zeichneLive() {
     gongGespielt = false;
     clearInterval(uhrTimer);
     uhrTimer = null;
-    live.replaceChildren(hinweis("Leertaste reicht das Mikrofon weiter."));
+    live.replaceChildren(
+      hinweis(
+        kreis().length
+          ? "Leertaste reicht das Mikrofon weiter."
+          : "Noch ist niemand im Kreis — trag oben deinen Namen ein.",
+      ),
+    );
     zeichneRunde();
     return;
   }
@@ -212,7 +277,7 @@ function melden(text, fehler = false) {
 
 // --- Bedienung -----------------------------------------------------------
 
-$("aufnahme").onclick = aufnahmeUebernehmen;
+$("aufnahme").onclick = aufnahmeHolen;
 $("weiter").onclick = weitergeben;
 $("pause").onclick = beenden;
 $("export").onclick = () => {
@@ -221,8 +286,17 @@ $("export").onclick = () => {
 };
 $("neu").onclick = () => {
   if (state.beitraege.length && !confirm(`${state.beitraege.length} Beiträge sind gesichert. Neue Runde beginnen?`)) return;
-  dranIndex = -1;
   sende({ typ: "neueRunde" });
+};
+
+$("beitritt").onsubmit = (ev) => {
+  ev.preventDefault();
+  beitreten($("beitritt-name").value);
+  $("beitritt-name").value = "";
+};
+$("noch-jemand").onclick = () => {
+  zeichneBeitritt(true);
+  $("beitritt-name").focus();
 };
 // Ablenkungsfrei: nur Sprecher, Uhr und Weitergeben. Mitgeschrieben und
 // gesichert wird weiter, der Text ist nur nicht zu sehen.
@@ -249,30 +323,30 @@ document.addEventListener("keydown", (ev) => {
 
 const ichNehmeAuf = () => state?.aufnahmeVon !== null && state?.aufnahmeVon === meineKennung;
 
-// Nur ein Gerät liefert den Ton. Wer zusieht, lässt sein Mikrofon zu — sonst
-// mischen sich mehrere Aufnahmen in denselben Erkennungsstrom.
-async function aufnahmeUebernehmen() {
+// Der Rückfall für das eine Mikrofon, das im Kreis herumgereicht wird: Es liegt
+// an einem Gerät, an dem niemand sitzt, der gerade dran ist. Als Anweisung
+// geschrieben, weil der Knopf weiter oben schon darauf zeigt.
+function aufnahmeHolen() {
   sende({ typ: "aufnehmen" });
-  if (audio) return;
-  try {
-    await mikroOeffnen();
-    melden("");
-  } catch (err) {
-    melden(`Kein Zugriff aufs Mikrofon: ${err.message}`, true);
-  }
 }
 
 function zeichneAufnahme() {
   const knopf = $("aufnahme");
+  const hinweis = $("aufnahme-hinweis");
   if (ichNehmeAuf()) {
     knopf.hidden = true;
-    $("aufnahme-hinweis").textContent = "dieses Gerät nimmt auf";
+    hinweis.textContent = "dieses Gerät nimmt auf";
     return;
   }
   knopf.hidden = false;
   knopf.textContent = state.aufnahmeVon === null ? "Hier aufnehmen" : "Aufnahme hierher holen";
-  $("aufnahme-hinweis").textContent =
-    state.aufnahmeVon === null ? "kein Gerät nimmt auf" : "ein anderes Gerät nimmt auf";
+  const dort = kreis().filter((t) => t.da && t.geraet === state.aufnahmeVon).map((t) => t.name);
+  hinweis.textContent =
+    state.aufnahmeVon === null
+      ? "kein Gerät nimmt auf"
+      : dort.length
+        ? `Aufnahme bei ${dort.join(", ")}`
+        : "ein anderes Gerät nimmt auf";
 }
 
 verbinden(async (m) => {
@@ -281,6 +355,7 @@ verbinden(async (m) => {
     meineKennung = m.kennung;
     return;
   }
+  if (m.typ === "beigetreten") return beigetreten(m);
   if (m.typ === "live" && state) {
     state.aktiv = m.aktiv;
     return zeichneLive();
@@ -289,10 +364,13 @@ verbinden(async (m) => {
 
   const ersteAntwort = state === null;
   state = m.state;
-  // Ohne Kreis gibt es nichts anzuzeigen — dann zuerst einrichten.
-  if (ersteAntwort && !state.teilnehmende.length) return location.replace("/einrichtung.html");
   zeichnen();
   zeichneAufnahme();
-  // Nimmt noch niemand auf, übernimmt das erste Gerät die Aufnahme.
-  if (ersteAntwort && state.aufnahmeVon === null) await aufnahmeUebernehmen();
+  // Nach einem Neuladen sitzen dieselben Menschen an diesem Gerät wie vorher.
+  if (ersteAntwort) {
+    for (const name of meineNamen) beitreten(name);
+    zeichneBeitritt();
+  }
+  // Das Mikrofon geht genau dann auf, wenn dieses Gerät aufnehmen soll.
+  await mikroPruefen();
 });

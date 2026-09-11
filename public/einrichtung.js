@@ -1,5 +1,6 @@
-// Eigene Seite für alles, was vor dem Kreis feststeht: Titel, Namen,
-// Mikrofon, Sprache, Verzögerung.
+// Eigene Seite für alles, was für die ganze Runde gilt: Titel, Mikrofon,
+// Sprache, Verzögerung, Redezeit. Wer im Kreis sitzt, entscheidet sich nicht
+// hier, sondern auf der Kreisseite — jeder tritt mit seinem Namen bei.
 import { verbinden, sende } from "./verbindung.js";
 
 const $ = (id) => document.getElementById(id);
@@ -16,11 +17,10 @@ verbinden((m) => {
   gefuellt = true;
   const s = m.state;
   $("titel").value = s.titel;
-  $("namen").value = s.teilnehmende.join("\n");
   $("sprache").value = s.sprache;
   $("latenz").value = String(s.attContextRight);
   $("redezeit").value = String(Math.round(s.redezeitMs / 60000));
-  if (s.teilnehmende.length) {
+  if (s.teilnehmende.length || s.beitraege.length) {
     // Der Kreis läuft schon — dann ist das hier eine Änderung, kein Anfang.
     $("los").textContent = "Übernehmen";
     $("zurueck").hidden = false;
@@ -51,14 +51,11 @@ async function mikrofoneAuflisten() {
 
 $("form").onsubmit = (ev) => {
   ev.preventDefault();
-  const liste = $("namen").value.split("\n").map((z) => z.trim()).filter(Boolean);
-  if (!liste.length) return melden("Bitte mindestens einen Namen eintragen.", true);
   localStorage.setItem("redekreis.mikro", $("mikro").value);
   sende({
     typ: "setzen",
     titel: $("titel").value.trim() || "Redekreis",
     sprache: $("sprache").value,
-    teilnehmende: liste,
     attContextRight: Number($("latenz").value),
     redezeitMs: Math.max(0, Number($("redezeit").value) || 0) * 60000,
   });

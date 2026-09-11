@@ -33,6 +33,7 @@ export class Circle {
   #vorrat = null; // Ton, der eintrifft, während die Session noch aufgebaut wird
   #vorlauf = []; // die letzten Momente vor dem Beginn eines Beitrags
   #zuletztGesichert = 0; // Zeitpunkt der letzten Sicherung des laufenden Beitrags
+  #letzteTeilnehmerNr = 0;
   #letzterText = 0; // wann zuletzt Text kam
   #letzteSprache = 0; // wann zuletzt jemand hörbar gesprochen hat
   #spracheSeitText = 0; // wieviel hörbare Sprache seit dem letzten Text kam
@@ -50,7 +51,8 @@ export class Circle {
       sprache: "de-DE",
       redezeitMs: 5 * 60 * 1000, // 0 = ohne Begrenzung
       attContextRight: 13, // 1040 ms Lookahead = beste Genauigkeit
-      teilnehmende: [],
+      teilnehmende: [], // { id, name, geraet, da }
+      dran: null, // Kennung dessen, der das Mikrofon hat
       aktiv: null, // { sprecher, begonnen, committed, tentative }
       beitraege: [],
       modell: null,
@@ -276,14 +278,83 @@ export class Circle {
     this.state.datei = dateiName(this.state.id);
     this.state.begonnen = new Date().toISOString();
     this.state.beitraege = [];
+    this.state.dran = null;
     this.#onChange("state");
   }
 
-  setzen({ titel, sprache, teilnehmende, attContextRight, redezeitMs }) {
+  // --- Wer ist da ---------------------------------------------------------
+
+  // Beitritt: Ein Mensch trägt seinen Namen ein und sitzt ab sofort im Kreis.
+  // Mehrere Menschen können dasselbe Gerät benutzen.
+  beitreten(name, geraet) {
+    const sauber = String(name ?? "").trim().slice(0, 60);
+    if (!sauber) return null;
+
+    // Wer schon einmal da war und neu verbindet, bekommt seinen Platz zurück —
+    // sonst steht er nach einem Neuladen doppelt im Kreis.
+    const bekannt = this.state.teilnehmende.find((t) => t.name === sauber && !t.da);
+    if (bekannt) {
+      bekannt.geraet = geraet;
+      bekannt.da = true;
+      this.#onChange("state");
+      return bekannt.id;
+    }
+    if (this.state.teilnehmende.some((t) => t.name === sauber && t.da)) {
+      return this.state.teilnehmende.find((t) => t.name === sauber).id;
+    }
+
+    const teilnehmer = { id: `t${++this.#letzteTeilnehmerNr}`, name: sauber, geraet, da: true };
+    this.state.teilnehmende.push(teilnehmer);
+    this.#onChange("state");
+    return teilnehmer.id;
+  }
+
+  verlassen(id) {
+    const vorher = this.state.teilnehmende.length;
+    this.state.teilnehmende = this.state.teilnehmende.filter((t) => t.id !== id);
+    if (this.state.dran === id) this.state.dran = null;
+    if (this.state.teilnehmende.length !== vorher) this.#onChange("state");
+  }
+
+  // Ein Gerät ist weg: Die Menschen bleiben im Kreis, aber als abwesend.
+  geraetGetrennt(geraet) {
+    let geaendert = false;
+    for (const t of this.state.teilnehmende) {
+      if (t.geraet === geraet) {
+        t.geraet = null;
+        t.da = false;
+        geaendert = true;
+      }
+    }
+    if (geaendert) this.#onChange("state");
+  }
+
+  anwesende() {
+    return this.state.teilnehmende.filter((t) => t.da);
+  }
+
+  // Der Nächste im Kreis — Abwesende werden übersprungen.
+  naechster() {
+    const da = this.anwesende();
+    if (!da.length) return null;
+    const jetzt = da.findIndex((t) => t.id === this.state.dran);
+    return da[(jetzt + 1) % da.length].id;
+  }
+
+  // Wer das Mikrofon hat. Bestimmt zugleich, welches Gerät aufnimmt.
+  gibMikrofonAn(id) {
+    const teilnehmer = this.state.teilnehmende.find((t) => t.id === id);
+    if (!teilnehmer) return null;
+    this.state.dran = id;
+    return teilnehmer;
+  }
+
+  // Was für die ganze Runde gilt. Wer im Kreis sitzt, steht hier nicht drin —
+  // das entscheidet der Beitritt.
+  setzen({ titel, sprache, attContextRight, redezeitMs }) {
     if (Number.isFinite(redezeitMs)) this.state.redezeitMs = Math.max(0, redezeitMs);
     if (typeof titel === "string") this.state.titel = titel;
     if (typeof sprache === "string") this.state.sprache = sprache;
-    if (Array.isArray(teilnehmende)) this.state.teilnehmende = teilnehmende;
     if (Number.isInteger(attContextRight)) this.state.attContextRight = attContextRight;
     this.sichern();
     this.#onChange("state");

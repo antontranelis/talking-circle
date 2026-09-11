@@ -32,13 +32,31 @@ const TYPEN = {
 const clients = new Set();
 // Genau ein Gerät liefert den Ton. Alle anderen sehen zu — sonst mischen sich
 // mehrere Mikrofone in denselben Erkennungsstrom und das Ergebnis ist Kauderwelsch.
+// Dieses hier ist das von Hand übernommene Gerät: das herumgereichte Mikrofon.
 let aufnahmeClient = null;
+// „Hier aufnehmen" gilt bis zur nächsten Übergabe. Ohne diese Frist ließe sich
+// der Ton nie von dem Gerät zurückholen, an dem der Dranseiende sitzt.
+let uebersteuert = false;
 let naechsteKennung = 0;
 
-const zustandMitAufnahme = () => ({
-  ...circle.state,
-  aufnahmeVon: aufnahmeClient?.kennung ?? null,
-});
+const geraetVon = (kennung) => {
+  for (const ws of clients) if (ws.kennung === kennung) return ws;
+  return null;
+};
+
+// Wer das Mikrofon hat, nimmt auf seinem eigenen Gerät auf — das ist der Fall,
+// wenn jeder mit seinem Telefon im Kreis sitzt. Ist er nicht erreichbar, oder
+// hat jemand die Aufnahme ausdrücklich hergeholt, liefert das von Hand
+// übernommene Gerät: das eine Mikrofon, das im Kreis herumgereicht wird.
+function aufnahmeGeraet() {
+  const vonHand = aufnahmeClient && clients.has(aufnahmeClient) ? aufnahmeClient.kennung : null;
+  if (uebersteuert && vonHand !== null) return vonHand;
+  const dran = circle.state.teilnehmende.find((t) => t.id === circle.state.dran);
+  if (dran?.da && geraetVon(dran.geraet)) return dran.geraet;
+  return vonHand;
+}
+
+const zustandMitAufnahme = () => ({ ...circle.state, aufnahmeVon: aufnahmeGeraet() });
 
 const circle = new Circle({
   onChange: (art) => {
@@ -52,6 +70,15 @@ function sendeAllen(nachricht) {
   for (const ws of clients) {
     if (ws.readyState === ws.OPEN) ws.send(roh);
   }
+}
+
+// Das Mikrofon wandert: an eine bestimmte Person oder an die nächste im Kreis.
+// Der Beitrag der bisherigen Person wird dabei abgeschlossen.
+async function mikrofonAn(id) {
+  const teilnehmer = circle.gibMikrofonAn(id);
+  if (!teilnehmer) return;
+  uebersteuert = false; // ab hier nimmt wieder das Gerät dessen auf, der dran ist
+  await circle.beitragStarten(teilnehmer.name);
 }
 
 const antworte = (res, code, daten) => {
@@ -174,7 +201,7 @@ wss.on("connection", (ws) => {
   ws.on("message", async (daten, istBinaer) => {
     if (istBinaer) {
       // Ton nur vom aufnehmenden Gerät; alles andere wird verworfen.
-      if (ws !== aufnahmeClient) return;
+      if (ws.kennung !== aufnahmeGeraet()) return;
       const kopie = new Float32Array(daten.buffer.slice(daten.byteOffset, daten.byteOffset + daten.byteLength));
       circle.fuettern(kopie);
       return;
@@ -189,7 +216,28 @@ wss.on("connection", (ws) => {
       switch (m.typ) {
         case "aufnehmen":
           aufnahmeClient = ws;
+          uebersteuert = true;
           sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+          break;
+        case "beitreten": {
+          // Mehrere Menschen dürfen an einem Gerät sitzen, deshalb antwortet der
+          // Server dem Absender mit der Kennung genau dieses Menschen.
+          const id = circle.beitreten(m.name, ws.kennung);
+          if (!id) break;
+          const teilnehmer = circle.state.teilnehmende.find((t) => t.id === id);
+          ws.send(JSON.stringify({ typ: "beigetreten", id, name: teilnehmer.name }));
+          sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+          break;
+        }
+        case "verlassen":
+          if (circle.state.dran === m.id) await circle.beitragBeenden();
+          circle.verlassen(m.id);
+          break;
+        case "weiter":
+          await mikrofonAn(circle.naechster());
+          break;
+        case "dran":
+          await mikrofonAn(m.id);
           break;
         case "neueRunde":
           await circle.neueRunde();
@@ -197,7 +245,7 @@ wss.on("connection", (ws) => {
         case "setzen":
           circle.setzen(m);
           break;
-        case "start":
+        case "start": // ohne Kreis: ein Beitrag unter freiem Namen
           await circle.beitragStarten(m.sprecher ?? "Unbekannt");
           break;
         case "stop":
@@ -218,10 +266,14 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     clients.delete(ws);
+    // Die Menschen bleiben im Kreis, nur ihr Gerät ist weg — sie kommen mit
+    // demselben Namen an denselben Platz zurück.
+    circle.geraetGetrennt(ws.kennung);
     if (aufnahmeClient === ws) {
       aufnahmeClient = null;
-      sendeAllen({ typ: "state", state: zustandMitAufnahme() });
+      uebersteuert = false;
     }
+    sendeAllen({ typ: "state", state: zustandMitAufnahme() });
   });
 });
 
