@@ -7,8 +7,10 @@ import path from "node:path";
 import { TranscribeModel } from "transcribe-cpp";
 import { resolveModel } from "./model.mjs";
 import { alsJsonl, alsMarkdown, standardZone } from "./protokoll.mjs";
+// Wohin die Runden geschrieben werden, entscheidet das Archiv — es liest den
+// Ordner aus der Umgebung.
+import { WURZEL as TRANSCRIPTS } from "./archiv.mjs";
 
-const TRANSCRIPTS = path.join(import.meta.dirname, "transcripts");
 const VORRAT_MAX = 250; // ~30 s bei 128-ms-Blöcken
 const SICHERN_MS = 3000; // Schreibabstand für den laufenden Beitrag
 const STUMM_MS = 15000; // so lange darf gesprochen werden, ohne dass Text kommt
@@ -22,7 +24,9 @@ const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang feh
 // Kreis steht.
 const KARENZ_MS = Number(process.env.TALKING_CIRCLE_KARENZ_MS ?? 45000);
 
-const dateiName = (id) => `transcripts/${id}.md`;
+// Im Fuß steht, wohin gesichert wird — kurz, wenn es der übliche Ordner ist.
+const ANZEIGE = process.env.TALKING_CIRCLE_TRANSCRIPTS ? TRANSCRIPTS : "transcripts";
+const dateiName = (id) => `${ANZEIGE}/${id}.md`;
 // Lautstärke eines Blocks als quadratisches Mittel.
 function pegel(pcm) {
   let summe = 0;

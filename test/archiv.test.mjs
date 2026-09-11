@@ -5,8 +5,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import os from "node:os";
+
 import { alsMarkdown, ausMarkdown } from "../protokoll.mjs";
-import {
+
+// Das Archiv liest den Ordner aus der Umgebung — die Prüfung bekommt einen
+// eigenen, damit sie nicht in echten Runden herumfuhrwerkt. Muss vor dem Laden
+// des Moduls stehen.
+const WURZEL = fs.mkdtempSync(path.join(os.tmpdir(), "redekreis-archiv-"));
+process.env.TALKING_CIRCLE_TRANSCRIPTS = WURZEL;
+process.on("exit", () => fs.rmSync(WURZEL, { recursive: true, force: true }));
+const {
   benenneUm,
   gespeicherteRunden,
   historie,
@@ -15,9 +24,7 @@ import {
   nimmZurueck,
   speichereMarkdown,
   stelleWiederHer,
-} from "../archiv.mjs";
-
-const WURZEL = path.join(import.meta.dirname, "..", "transcripts");
+} = await import("../archiv.mjs");
 const ZONE = "Europe/Berlin";
 
 // Jede Prüfung legt ihre eigene Runde an und räumt sie hinterher weg.

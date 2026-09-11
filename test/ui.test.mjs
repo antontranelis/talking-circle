@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const WURZEL = path.join(import.meta.dirname, "..");
@@ -30,9 +31,18 @@ const MIKRO_STUB = () => {
 };
 
 async function starteServer(t, port) {
+  // Die Proberunden gehören nicht ins echte Archiv: eigener Ordner, danach weg.
+  const ordner = fs.mkdtempSync(path.join(os.tmpdir(), "redekreis-probe-"));
+  t.after(() => fs.rmSync(ordner, { recursive: true, force: true }));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", TALKING_CIRCLE_KARENZ_MS: String(KARENZ_MS) },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      TALKING_CIRCLE_KARENZ_MS: String(KARENZ_MS),
+      TALKING_CIRCLE_TRANSCRIPTS: ordner,
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
   t.after(() => server.kill("SIGKILL"));

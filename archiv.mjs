@@ -5,7 +5,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { alsJsonl, alsMarkdown, ausMarkdown } from "./protokoll.mjs";
 
-const WURZEL = path.join(import.meta.dirname, "transcripts");
+// Wohin die Runden geschrieben werden. Im Betrieb `transcripts/` neben dem
+// Server; die Prüfungen setzen sich einen eigenen Ordner, damit ihre
+// Proberunden nicht im echten Archiv landen.
+export const WURZEL = process.env.TALKING_CIRCLE_TRANSCRIPTS
+  ? path.resolve(process.env.TALKING_CIRCLE_TRANSCRIPTS)
+  : path.join(import.meta.dirname, "transcripts");
 const PAPIERKORB = path.join(WURZEL, "papierkorb");
 const KENNUNG = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}$/;
 

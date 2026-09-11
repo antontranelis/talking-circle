@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import * as Y from "yjs";
@@ -28,14 +29,30 @@ function wavLesen(p) {
   return pcm;
 }
 
+// Ein Ordner nur für diese Prüfung — das echte Archiv geht sie nichts an.
+function probenOrdner(t) {
+  const ordner = fs.mkdtempSync(path.join(os.tmpdir(), "redekreis-probe-"));
+  t.after(() => fs.rmSync(ordner, { recursive: true, force: true }));
+  return ordner;
+}
+
 // Jeder Test fährt einen eigenen Server hoch, damit die Runden sich nicht
-// gegenseitig ins Protokoll reden.
+// gegenseitig ins Protokoll reden — und schreibt in einen eigenen Ordner, der
+// hinterher verschwindet. Das echte Archiv geht die Prüfung nichts an.
 async function starteServer(t, port, zusatz = {}) {
+  const ordner = probenOrdner(t);
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ...zusatz },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      TALKING_CIRCLE_TRANSCRIPTS: ordner,
+      ...zusatz,
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
+  server.ordner = ordner;
   t.after(() => server.kill("SIGKILL"));
   await new Promise((ok, fehler) => {
     const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
@@ -81,9 +98,10 @@ const meineKennung = async (eingang) =>
   (await warteAuf(() => eingang.find((m) => m.typ === "du"), "eigene Kennung", 5000)).kennung;
 
 test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) => {
+  const ordner = probenOrdner(t);
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
-    env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" },
+    env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", TALKING_CIRCLE_TRANSCRIPTS: ordner },
     stdio: ["ignore", "pipe", "inherit"],
   });
   t.after(() => server.kill("SIGKILL"));
@@ -159,16 +177,17 @@ test("Redebeitrag wird aufgenommen, transkribiert und protokolliert", async (t) 
   assert.match(beitraege[0].text, /Wellen\.?$/i, "das Ende des Beitrags wurde beim Weitergeben verworfen");
   console.log(`  → "${beitraege[0].text}"`);
 
-  const md = fs.readFileSync(path.join(WURZEL, "transcripts", `${letzter.state.id}.md`), "utf8");
+  const md = fs.readFileSync(path.join(ordner, `${letzter.state.id}.md`), "utf8");
   assert.match(md, /# Testrunde/);
   assert.match(md, /## Anton/);
   ws.close();
 });
 
 test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", async (t) => {
+  const ordner = probenOrdner(t);
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
-    env: { ...process.env, PORT: String(PORT + 1), HOST: "127.0.0.1" },
+    env: { ...process.env, PORT: String(PORT + 1), HOST: "127.0.0.1", TALKING_CIRCLE_TRANSCRIPTS: ordner },
     stdio: ["ignore", "pipe", "inherit"],
   });
   t.after(() => server.kill("SIGKILL"));
@@ -203,7 +222,7 @@ test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", asy
   ws.send(Buffer.from(teil.buffer, teil.byteOffset, teil.byteLength));
   ws.send(JSON.stringify({ typ: "stop" }));
   const erste = await warten((s) => s.beitraege.length === 1);
-  const protokoll = path.join(WURZEL, "transcripts", `${erste.id}.md`);
+  const protokoll = path.join(ordner, `${erste.id}.md`);
   assert.ok(fs.existsSync(protokoll), "Protokoll der ersten Runde fehlt");
 
   ws.send(JSON.stringify({ typ: "neueRunde" }));
@@ -213,23 +232,13 @@ test("Neue Runde leert die Anzeige und lässt das Protokoll auf der Platte", asy
   assert.deepEqual(zweite.teilnehmende.map((t) => t.name), ["Anton"], "der Kreis bleibt stehen");
   assert.equal(zweite.dran, null, "die neue Runde fängt ohne Mikrofon an");
   assert.ok(fs.existsSync(protokoll), "das Protokoll der alten Runde wurde weggeräumt");
-  assert.ok(!fs.existsSync(path.join(WURZEL, "transcripts", `${zweite.id}.md`)), "leere Runde schreibt eine Datei");
+  assert.ok(!fs.existsSync(path.join(ordner, `${zweite.id}.md`)), "leere Runde schreibt eine Datei");
   ws.close();
 });
 
 test("Ein Export mitten im Beitrag enthält, was gerade gesagt wurde", async (t) => {
   const port = PORT + 2;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port);
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];
@@ -266,7 +275,7 @@ test("Ein Export mitten im Beitrag enthält, was gerade gesagt wurde", async (t)
 
   // Auf der Platte darf der Stand höchstens einen Takt hinterherhinken.
   const zustand = zustaende.filter((m) => m.typ === "state").at(-1).state;
-  const datei = path.join(WURZEL, zustand.datei);
+  const datei = path.resolve(WURZEL, zustand.datei);
   const bisGeschrieben = Date.now() + 8000;
   let aufPlatte = "";
   while (Date.now() < bisGeschrieben) {
@@ -282,17 +291,7 @@ test("Eine Runde über viele Übergaben hinweg bleibt sprechfähig", async (t) =
   // Der Fehler, den das hier abfängt: ohne stream.reset() nimmt die Sitzung
   // nach wenigen Beiträgen keinen neuen mehr an — stumm, ohne Fehlermeldung.
   const port = PORT + 3;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port);
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];
@@ -336,7 +335,7 @@ test("Verstummt die Erkennung, setzt der Server sie selbst neu auf", async (t) =
   const port = PORT + 4;
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", TALKING_CIRCLE_TRANSCRIPTS: probenOrdner(t) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   // Beim Neuaufsetzen darf kein Ton verloren gehen — er gehört in den neuen Strom.
@@ -405,17 +404,7 @@ test("Nur das aufnehmende Gerät liefert Ton, Zuschauer stören nicht", async (t
   // Vorher kippten alle verbundenen Browser ihr Mikrofon in denselben
   // Erkennungsstrom: doppelte Rechenlast und zerhackter Text.
   const port = PORT + 5;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port);
 
   const aufnehmer = await verbinde(port);
   const zuschauer = await verbinde(port);
@@ -458,17 +447,7 @@ test("Das heruntergeladene Protokoll zeigt die Zeit der eigenen Zeitzone", async
   // Der Container läuft auf UTC; ohne Zeitzone stünden im Protokoll Uhrzeiten,
   // die zwei Stunden neben der Runde liegen.
   const port = PORT + 6;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", TZ: "UTC" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port, { TZ: "UTC" });
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];
@@ -511,17 +490,7 @@ test("Das heruntergeladene Protokoll zeigt die Zeit der eigenen Zeitzone", async
 
 test("Jede Runde liegt auch im Zeilenformat des Session-Archivs vor", async (t) => {
   const port = PORT + 7;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port);
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];
@@ -550,7 +519,7 @@ test("Jede Runde liegt auch im Zeilenformat des Session-Archivs vor", async (t) 
   }
 
   const zustand = zustaende.filter((m) => m.typ === "state").at(-1).state;
-  const datei = path.join(WURZEL, zustand.datei.replace(/\.md$/, ".jsonl"));
+  const datei = path.resolve(WURZEL, zustand.datei.replace(/\.md$/, ".jsonl"));
   const zeilen = fs.readFileSync(datei, "utf8").trim().split("\n").map((z) => JSON.parse(z));
 
   // Erste Zeile ist der Titel — daraus baut das Archiv den Sessionnamen.
@@ -569,17 +538,7 @@ test("Jede Runde liegt auch im Zeilenformat des Session-Archivs vor", async (t) 
 
 test("Das Archiv listet frühere Runden und gibt sie einzeln heraus", async (t) => {
   const port = PORT + 8;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port);
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];
@@ -632,17 +591,7 @@ test("Das Archiv listet frühere Runden und gibt sie einzeln heraus", async (t) 
 
 test("Protokolle lassen sich über die Schnittstelle korrigieren und zurücknehmen", async (t) => {
   const port = PORT + 9;
-  const server = spawn(process.execPath, ["server.mjs"], {
-    cwd: WURZEL,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", TZ: "Europe/Berlin" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  t.after(() => server.kill("SIGKILL"));
-  await new Promise((ok, fehler) => {
-    const frist = setTimeout(() => fehler(new Error("Modell wurde nicht rechtzeitig bereit")), 120_000);
-    server.stdout.on("data", (d) => d.toString().includes("Modell bereit") && (clearTimeout(frist), ok()));
-    server.on("exit", (code) => (clearTimeout(frist), fehler(new Error(`Server beendet mit ${code}`))));
-  });
+  const server = await starteServer(t, port, { TZ: "Europe/Berlin" });
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const zustaende = [];

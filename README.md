@@ -50,6 +50,7 @@ Stellschrauben:
 | `MODELL_QUANT` | `Q8_0` | `Q6_K` und `Q4_K_M` sind kleiner und etwas ungenauer |
 | `TZ` | UTC | Zeitzone der Uhrzeiten in der Datei auf der Platte |
 | `TALKING_CIRCLE_MODEL` | – | Pfad zu einer eigenen `.gguf`; überspringt das Laden |
+| `TALKING_CIRCLE_TRANSCRIPTS` | `transcripts/` | wohin die Runden geschrieben werden |
 
 Das Abbild ist rund 320 MB groß, enthält kein Modell und läuft auf `amd64` und
 `arm64`. Das Mikrofon liefert der Browser: `http://localhost:8123` funktioniert
@@ -330,6 +331,10 @@ und wird nicht mitgeliefert, sondern zur Laufzeit geladen.
 ```bash
 npm test
 ```
+
+Die Prüfungen schreiben in einen eigenen Ordner unter `/tmp`
+(`TALKING_CIRCLE_TRANSCRIPTS`) und räumen ihn hinterher weg — im echten Archiv
+bleibt keine Proberunde liegen.
 
 Startet den echten Server, schickt eine Beispielaufnahme über den WebSocket wie
 der Browser es täte und prüft den ganzen Weg: Live-Text, Satzanfang aus dem
