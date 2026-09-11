@@ -15,6 +15,11 @@ const STUMM_MS = 15000; // so lange darf gesprochen werden, ohne dass Text kommt
 const SPRACHE_MIN_MS = 4000; // und so viel davon muss hörbar gesprochen worden sein
 const PEGEL_SCHWELLE = 0.012; // darüber gilt ein Block als Sprache
 const VORLAUF = 12; // ~1,5 s Ton vor dem Tastendruck, damit kein Satzanfang fehlt
+// So lange darf jemand weg sein, ohne den Kreis zu verlassen. 45 s reichen für
+// ein Neuladen, den Wechsel zur Einrichtung und zurück oder einen kurzen
+// Funkloch-Moment — und sind kurz genug, dass niemand ewig als Schatten im
+// Kreis steht.
+const KARENZ_MS = Number(process.env.TALKING_CIRCLE_KARENZ_MS ?? 45000);
 
 const dateiName = (id) => `transcripts/${id}.md`;
 // Lautstärke eines Blocks als quadratisches Mittel.
@@ -34,6 +39,7 @@ export class Circle {
   #vorlauf = []; // die letzten Momente vor dem Beginn eines Beitrags
   #zuletztGesichert = 0; // Zeitpunkt der letzten Sicherung des laufenden Beitrags
   #letzteTeilnehmerNr = 0;
+  #karenz = new Map(); // id → laufende Karenzzeit nach einer Trennung
   #letzterText = 0; // wann zuletzt Text kam
   #letzteSprache = 0; // wann zuletzt jemand hörbar gesprochen hat
   #spracheSeitText = 0; // wieviel hörbare Sprache seit dem letzten Text kam
@@ -286,47 +292,100 @@ export class Circle {
 
   // Beitritt: Ein Mensch trägt seinen Namen ein und sitzt ab sofort im Kreis.
   // Mehrere Menschen können dasselbe Gerät benutzen.
-  beitreten(name, geraet) {
+  //
+  // Der Platz gehört dem Namen an einem Browser (`schluessel`), nicht der
+  // Leitung: Ein Neuladen, ein zweiter Tab oder ein Netzwackler bindet den
+  // vorhandenen Platz an die neue Leitung. Sonst meldet der `close` der alten
+  // Leitung den Menschen ab, nachdem er längst wieder da ist — dann steht er
+  // als abwesend im Kreis und wird beim Weiterreichen übersprungen.
+  beitreten(name, geraet, schluessel = null) {
     const sauber = String(name ?? "").trim().slice(0, 60);
     if (!sauber) return null;
 
-    // Wer schon einmal da war und neu verbindet, bekommt seinen Platz zurück —
-    // sonst steht er nach einem Neuladen doppelt im Kreis.
-    const bekannt = this.state.teilnehmende.find((t) => t.name === sauber && !t.da);
-    if (bekannt) {
-      bekannt.geraet = geraet;
-      bekannt.da = true;
+    const gleichenNamens = this.state.teilnehmende.filter((t) => t.name === sauber);
+    const eigener =
+      gleichenNamens.find((t) => schluessel && t.schluessel === schluessel) ??
+      // Wer sein Gerät verloren hat, bekommt seinen Platz auch von einem
+      // anderen Browser aus zurück — es sitzt ja niemand darauf.
+      gleichenNamens.find((t) => !t.da);
+    if (eigener) {
+      eigener.geraet = geraet;
+      eigener.schluessel = schluessel ?? eigener.schluessel;
+      eigener.da = true;
+      this.#karenzLoeschen(eigener.id);
       this.#onChange("state");
-      return bekannt.id;
+      return eigener.id;
     }
-    if (this.state.teilnehmende.some((t) => t.name === sauber && t.da)) {
-      return this.state.teilnehmende.find((t) => t.name === sauber).id;
-    }
+    // Zwei Menschen, ein Name, beide erreichbar: Der Zweite braucht einen
+    // eigenen Platz — sonst stünde im Protokoll der Falsche als Sprecher.
+    const frei = gleichenNamens.length ? this.#freierName(sauber) : sauber;
 
-    const teilnehmer = { id: `t${++this.#letzteTeilnehmerNr}`, name: sauber, geraet, da: true };
+    const teilnehmer = {
+      id: `t${++this.#letzteTeilnehmerNr}`,
+      name: frei,
+      geraet,
+      schluessel,
+      da: true,
+    };
     this.state.teilnehmende.push(teilnehmer);
     this.#onChange("state");
     return teilnehmer.id;
   }
 
-  verlassen(id) {
-    const vorher = this.state.teilnehmende.length;
-    this.state.teilnehmende = this.state.teilnehmende.filter((t) => t.id !== id);
-    if (this.state.dran === id) this.state.dran = null;
-    if (this.state.teilnehmende.length !== vorher) this.#onChange("state");
+  // „Anton", „Anton (2)", „Anton (3)" — der nächste freie Zusatz.
+  #freierName(name) {
+    const belegt = new Set(this.state.teilnehmende.map((t) => t.name));
+    for (let n = 2; ; n++) {
+      if (!belegt.has(`${name} (${n})`)) return `${name} (${n})`;
+    }
   }
 
-  // Ein Gerät ist weg: Die Menschen bleiben im Kreis, aber als abwesend.
+  // Jemand geht endgültig: von Hand über „Kreis verlassen" oder weil die
+  // Karenzzeit nach einer Trennung abgelaufen ist.
+  async verlassen(id) {
+    if (!this.state.teilnehmende.some((t) => t.id === id)) return;
+    // War er dran, wird sein Beitrag sauber abgeschlossen. Das Mikrofon liegt
+    // danach in der Mitte: Von selbst weiterzuspringen wäre überraschend.
+    if (this.state.dran === id) await this.beitragBeenden();
+    this.#karenzLoeschen(id);
+    this.state.teilnehmende = this.state.teilnehmende.filter((t) => t.id !== id);
+    if (this.state.dran === id) this.state.dran = null;
+    this.#onChange("state");
+  }
+
+  // Ein Gerät ist weg: Die Menschen bleiben zunächst im Kreis, aber abwesend.
+  // Ob sie nur kurz weg sind oder gegangen, sagt niemand — das entscheidet die
+  // Karenzzeit.
   geraetGetrennt(geraet) {
     let geaendert = false;
     for (const t of this.state.teilnehmende) {
       if (t.geraet === geraet) {
         t.geraet = null;
         t.da = false;
+        this.#karenzStarten(t.id);
         geaendert = true;
       }
     }
     if (geaendert) this.#onChange("state");
+  }
+
+  // Kommt innerhalb der Karenzzeit kein Beitritt mit demselben Namen, war es
+  // kein Wackler, sondern ein Gehen — dann verlässt der Mensch den Kreis.
+  #karenzStarten(id) {
+    this.#karenzLoeschen(id);
+    const uhr = setTimeout(() => {
+      this.#karenz.delete(id);
+      this.verlassen(id).catch((err) => console.error("Hinausbegleiten fehlgeschlagen:", err.message));
+    }, KARENZ_MS);
+    uhr.unref?.(); // darf den Server am Beenden nicht hindern
+    this.#karenz.set(id, uhr);
+  }
+
+  #karenzLoeschen(id) {
+    const uhr = this.#karenz.get(id);
+    if (!uhr) return;
+    clearTimeout(uhr);
+    this.#karenz.delete(id);
   }
 
   anwesende() {
@@ -376,7 +435,10 @@ export class Circle {
     if (!hatText && !fs.existsSync(this.#pfad(".json"))) return;
     this.#zuletztGesichert = Date.now();
     fs.mkdirSync(TRANSCRIPTS, { recursive: true });
-    const { aktiv, bereit, ...rest } = this.state;
+    const { aktiv, bereit, teilnehmende, ...rest } = this.state;
+    // Der Browser-Schlüssel ist die Platzkarte eines Geräts — er gehört weder
+    // ins Protokoll noch auf andere Geräte.
+    rest.teilnehmende = teilnehmende.map(({ schluessel, ...wer }) => wer);
     const laufend = aktiv?.committed
       ? { sprecher: aktiv.sprecher, begonnen: aktiv.begonnen, text: aktiv.committed.trim() }
       : null;
@@ -406,6 +468,7 @@ export class Circle {
 
   async schliessen() {
     clearInterval(this.#takt);
+    for (const id of [...this.#karenz.keys()]) this.#karenzLoeschen(id);
     await this.beitragBeenden();
     this.#session?.dispose();
     this.#model?.dispose();

@@ -215,15 +215,44 @@ Beide Fälle funktionieren damit ohne Umschalten:
 - **Jeder mit dem eigenen Telefon.** Die Aufnahme folgt dem Mikrofon durch den
   Kreis.
 
+**Die Mikrofon-Freigabe wird beim Beitritt geholt, nicht erst beim
+Drankommen.** Der Browser fragt genau einmal — auf den Knopfdruck hin, mit dem
+man beitritt —, und der Tonstrom bleibt danach offen. So ist die Übergabe
+sofort da, statt dass mitten im Satz eine Nachfrage aufgeht und der Anfang
+fehlt. Der Pegel zappelt auf jedem beigetretenen Gerät, gesendet wird trotzdem
+nur vom Gerät dessen, der dran ist. Der Preis dafür: Der Browser zeigt auf
+allen beigetretenen Geräten das Mikrofon-Symbol an, auch auf denen, die gerade
+nichts schicken. Wird die Freigabe verweigert, steht es im Fuß — dieses Gerät
+kann dann nicht aufnehmen.
+
 **Hier aufnehmen** im Fuß holt den Ton von Hand auf das eigene Gerät. Das ist
 der Rückfall für das herumgereichte Mikrofon: Ist der Dranseiende gerade nicht
 verbunden — Telefon zugeklappt, Verbindung weg —, liefert weiter das Gerät, das
 die Aufnahme zuletzt übernommen hat. Bei der nächsten Übergabe gilt wieder die
 Regel, dass das Gerät des Dranseienden aufnimmt.
 
-Geht ein Gerät verloren, bleiben die Menschen daran im Kreis stehen, nur
-gedimmt. Sie werden beim Weiterreichen übersprungen und sind mit demselben
-Namen sofort wieder da, sobald sie neu beitreten.
+## Kommen und Gehen
+
+Der Platz im Kreis gehört dem Namen an einem Browser, nicht der Verbindung.
+Neuladen, ein zweiter Tab, der Weg über die Einrichtung und zurück, ein
+Funkloch — jedes Mal bindet sich derselbe Mensch an seinen Platz zurück, ohne
+Doppelgänger und ohne dass er beim Weiterreichen übersprungen wird.
+
+Tragen zwei Menschen an verschiedenen Geräten denselben Namen ein, bekommt der
+Zweite **„Name (2)"** und damit einen eigenen Platz. Sonst stünde im Protokoll
+der Falsche als Sprecher.
+
+Geht ein Gerät verloren, bleibt der Mensch daran zunächst gedimmt im Kreis
+stehen und wird beim Weiterreichen übersprungen. Kommt er **innerhalb von 45
+Sekunden** nicht zurück, war es kein Wackler, sondern ein Gehen: Er verlässt
+den Kreis. War er gerade dran, wird sein Beitrag abgeschlossen und das Mikrofon
+liegt wieder in der Mitte — weitergereicht wird von Hand, ein Sprung zum
+Nächsten von selbst wäre überraschend. (`TALKING_CIRCLE_KARENZ_MS` stellt die
+Zeit um, die Tests laufen mit wenigen Sekunden.)
+
+Wer bewusst geht, drückt das **×** am eigenen Namen: Der Platz ist sofort frei,
+und der Name wird auch im Browser vergessen — sonst säße man nach dem nächsten
+Neuladen wieder im Kreis.
 
 ## Zweiter Bildschirm
 
@@ -268,5 +297,12 @@ Für den Kreis mit mehreren Geräten laufen zwei Leitungen nebeneinander: Nur de
 Ton vom Gerät des Dranseienden darf im Protokoll landen, während das andere
 Rauschen schickt. Geprüft werden alle drei Fälle — zwei Geräte, zwei Menschen an
 einem Gerät, und der Dranseiende ohne Verbindung. `test/kreis.test.mjs` prüft
-den Kreis selbst, ohne Modell: Beitritt, Wiederkommen ohne Doppelgänger und die
-Reihenfolge über Abwesende hinweg.
+den Kreis selbst, ohne Modell: Beitritt, Wiederkommen ohne Doppelgänger, die
+Reihenfolge über Abwesende hinweg und die Karenzzeit beim Gehen.
+
+`test/ui.test.mjs` geht den Weg, den ein Mensch wirklich geht: zwei Browser als
+zwei Geräte, Namen ins Feld tippen, beitreten, **Leertaste** — und prüft, dass
+`dran` und die Aufnahme zwischen den Geräten wechseln, dass ein zweiter Tab
+niemandem den Platz nimmt und dass das Gehen im Kreis ankommt. Er braucht einen
+Chrome auf der Platte (`CHROME_PFAD` setzt den Pfad) und wird übersprungen,
+wenn keiner da ist.

@@ -56,7 +56,12 @@ function aufnahmeGeraet() {
   return vonHand;
 }
 
-const zustandMitAufnahme = () => ({ ...circle.state, aufnahmeVon: aufnahmeGeraet() });
+const zustandMitAufnahme = () => ({
+  ...circle.state,
+  // Der Browser-Schlüssel ist die Platzkarte eines Geräts und bleibt dort.
+  teilnehmende: circle.state.teilnehmende.map(({ schluessel, ...wer }) => wer),
+  aufnahmeVon: aufnahmeGeraet(),
+});
 
 const circle = new Circle({
   onChange: (art) => {
@@ -222,7 +227,7 @@ wss.on("connection", (ws) => {
         case "beitreten": {
           // Mehrere Menschen dürfen an einem Gerät sitzen, deshalb antwortet der
           // Server dem Absender mit der Kennung genau dieses Menschen.
-          const id = circle.beitreten(m.name, ws.kennung);
+          const id = circle.beitreten(m.name, ws.kennung, m.schluessel);
           if (!id) break;
           const teilnehmer = circle.state.teilnehmende.find((t) => t.id === id);
           ws.send(JSON.stringify({ typ: "beigetreten", id, name: teilnehmer.name }));
@@ -230,8 +235,7 @@ wss.on("connection", (ws) => {
           break;
         }
         case "verlassen":
-          if (circle.state.dran === m.id) await circle.beitragBeenden();
-          circle.verlassen(m.id);
+          await circle.verlassen(m.id);
           break;
         case "weiter":
           await mikrofonAn(circle.naechster());

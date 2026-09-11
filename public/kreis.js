@@ -19,6 +19,23 @@ try {
   meineNamen = [];
 }
 
+// Die Platzkarte dieses Browsers. Der Server erkennt daran, dass ein zweiter
+// Tab oder eine neue Leitung derselbe Mensch ist — und nicht ein zweiter mit
+// gleichem Namen, dem ein eigener Platz zusteht.
+const schluessel = (() => {
+  let wert = null;
+  try {
+    wert = localStorage.getItem("redekreis.geraet");
+    if (!wert) {
+      wert = crypto.randomUUID();
+      localStorage.setItem("redekreis.geraet", wert);
+    }
+  } catch {
+    wert ??= crypto.randomUUID(); // privates Fenster: gilt für diese Sitzung
+  }
+  return wert;
+})();
+
 // --- Mikrofon ------------------------------------------------------------
 
 async function mikroOeffnen() {
@@ -36,10 +53,13 @@ async function mikroOeffnen() {
   await ctx.audioWorklet.addModule("pcm-worklet.js");
   const knoten = new AudioWorkletNode(ctx, "pcm-worklet");
   knoten.port.onmessage = ({ data }) => {
+    // Der Pegel zappelt immer — so sieht man, dass das Mikrofon arbeitet, auch
+    // wenn dieses Gerät gerade nichts schickt.
     pegelZeigen(data.pegel);
-    // Immer senden: der Server hält die letzten Sekunden vor, damit der Anfang
-    // eines Beitrags auch dann steht, wenn die Taste einen Moment später kommt.
-    if (offen()) sendeTon(data.pcm.buffer);
+    // Gesendet wird nur vom Gerät dessen, der dran ist. Dann aber durchgehend:
+    // Der Server hält die letzten Sekunden vor, damit der Anfang eines Beitrags
+    // auch dann steht, wenn die Übergabe einen Moment später kommt.
+    if (offen() && ichNehmeAuf()) sendeTon(data.pcm.buffer);
   };
   ctx.createMediaStreamSource(spur).connect(knoten);
   audio = { ctx, spur };
@@ -57,19 +77,28 @@ function mikroSchliessen() {
 }
 
 let mikroLaeuft = false; // ein Aufbau zur Zeit, sonst öffnen sich zwei Ströme
-async function mikroPruefen() {
-  const soll = ichNehmeAuf();
-  if (soll === Boolean(audio) || mikroLaeuft) return;
-  if (!soll) return mikroSchliessen();
+// Die Freigabe wird beim Beitritt geholt, nicht erst beim Drankommen: Der
+// Browser fragt danach genau einmal, und zwar auf einen Tastendruck hin — so
+// ist die Übergabe später sofort da, statt mitten im Satz nach Erlaubnis zu
+// fragen. Der Strom bleibt offen, gesendet wird trotzdem nur, wer dran ist.
+async function mikroFreigeben() {
+  if (audio || mikroLaeuft) return;
   mikroLaeuft = true;
   try {
     await mikroOeffnen();
     melden("");
   } catch (err) {
-    melden(`Kein Zugriff aufs Mikrofon: ${err.message}`, true);
+    melden(`Ohne Mikrofon-Freigabe kann dieses Gerät nicht aufnehmen: ${err.message}`, true);
   } finally {
     mikroLaeuft = false;
   }
+}
+
+// Ein Gerät, an dem niemand sitzt, soll auch kein Mikrofon offen halten —
+// außer es hat die Aufnahme von Hand übernommen.
+async function mikroPruefen() {
+  if (meineIds.size || ichNehmeAuf()) return mikroFreigeben();
+  mikroSchliessen();
 }
 
 // Ein weicher Zweiklang, wenn die Redezeit voll ist — kein Alarm, ein Hinweis.
@@ -115,19 +144,33 @@ const beenden = () => sende({ typ: "stop" });
 function beitreten(name) {
   const sauber = name.trim().slice(0, 60);
   if (!sauber) return;
-  sende({ typ: "beitreten", name: sauber });
+  sende({ typ: "beitreten", name: sauber, schluessel });
 }
 
 function beigetreten({ id, name }) {
   meineIds.add(id);
-  if (!meineNamen.includes(name)) {
-    meineNamen.push(name);
-    localStorage.setItem(SPEICHER, JSON.stringify(meineNamen));
-  }
+  namenMerken(meineNamen.includes(name) ? meineNamen : [...meineNamen, name]);
   zeichneBeitritt();
   // Sitzt sonst niemand am Ton, übernimmt dieses Gerät die Aufnahme. So geht
   // der Anfang des ersten Beitrags nicht verloren.
   if (state?.aufnahmeVon === null) sende({ typ: "aufnehmen" });
+}
+
+function namenMerken(liste) {
+  meineNamen = liste;
+  try {
+    localStorage.setItem(SPEICHER, JSON.stringify(meineNamen));
+  } catch {}
+}
+
+// Kreis verlassen: Der Platz wird freigegeben und der Name vergessen — sonst
+// säße man nach dem nächsten Neuladen wieder drin.
+function verlassen(id) {
+  const wer = kreis().find((t) => t.id === id);
+  meineIds.delete(id);
+  if (wer) namenMerken(meineNamen.filter((n) => n !== wer.name));
+  sende({ typ: "verlassen", id });
+  zeichneBeitritt();
 }
 
 // Solange von diesem Gerät niemand im Kreis sitzt, steht das Namensfeld offen;
@@ -162,7 +205,19 @@ function zeichneRunde() {
       if (meineIds.has(t.id)) b.classList.add("ich");
       b.title = t.da ? "Das Mikrofon hierher geben" : `${t.name} ist gerade nicht verbunden`;
       b.onclick = () => anPerson(t.id);
-      return b;
+      if (!meineIds.has(t.id)) return b;
+
+      // Nur für die eigenen Leute: Wer hier sitzt, kann auch wieder aufstehen.
+      const weg = document.createElement("button");
+      weg.type = "button";
+      weg.className = "chip-weg";
+      weg.textContent = "×";
+      weg.title = `${t.name} verlässt den Kreis`;
+      weg.onclick = () => verlassen(t.id);
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.append(b, weg);
+      return chip;
     }),
   );
 }
@@ -293,6 +348,8 @@ $("beitritt").onsubmit = (ev) => {
   ev.preventDefault();
   beitreten($("beitritt-name").value);
   $("beitritt-name").value = "";
+  // Noch in der Geste des Absendens: iOS Safari gibt das Mikrofon nur so frei.
+  mikroFreigeben();
 };
 $("noch-jemand").onclick = () => {
   zeichneBeitritt(true);
