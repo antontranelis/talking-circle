@@ -83,17 +83,28 @@ setzt den Nächsten dazu, der am selben Rechner sitzt. Der Browser merkt sich,
 wer an diesem Gerät saß: Nach einem Neuladen sind dieselben Menschen wieder da,
 ohne Doppelgänger im Kreis.
 
-Danach läuft die Runde auf einer Seite ohne Scrollen — links, was gerade gesagt
-wird, rechts der Verlauf.
+Danach läuft die Runde auf einer Seite ohne Scrollen — links der Kreis mit den
+Plätzen, rechts der Verlauf, in dem der laufende Beitrag schon mitwächst. Wer
+dran ist, hat einen Kometenschweif hinter sich, und sein Platz atmet mit dem
+Pegel. Am Telefon sind Kreis und Text zwei Vollansichten; die Pille oben
+schaltet um, ein Wischen quer tut dasselbe.
+
+Unter dem Kreis stehen drei gleich große Griffe — Beenden, Pause, Weitergeben —
+und darüber der Zeitstrahl. Alles Weitere liegt hinter **··· Mehr**:
+Einstellungen, Protokoll laden, Archiv, Nur Sprecher, Vollbild, Neue Runde.
 
 - **Leertaste** reicht das Mikrofon an die nächste Person weiter: der laufende
   Beitrag wird abgeschlossen, der neue beginnt. Wessen Gerät gerade weg ist,
-  wird dabei übersprungen. Ein Klick auf einen Namen springt direkt zu dieser
+  wird dabei übersprungen. Ein Antippen eines Platzes springt direkt zu dieser
   Person.
-- **Die Reihenfolge lässt sich ziehen**: Einen Namen anfassen und an seinen
-  Platz schieben — eine gestrichelte Lücke zeigt, wo er landet. Das geht mit
-  der Maus wie mit dem Finger, und alle Geräte sehen die neue Reihe sofort.
-  Ein kurzes Antippen gibt weiterhin das Mikrofon an diese Person.
+- **Die Reihenfolge lässt sich ziehen**: Einen Platz anfassen und über den Ring
+  schieben — eine gestrichelte Lücke zeigt, wo er landet. Das geht mit der Maus
+  wie mit dem Finger, und alle Geräte sehen die neue Reihe sofort. Ein kurzes
+  Antippen gibt weiterhin das Mikrofon an diese Person.
+- **Pause** hält den Beitrag an, ohne ihn zu beenden: Die Aufnahme schweigt, die
+  Uhr steht, der Beitrag bleibt offen. **Fortsetzen** redet im selben Beitrag
+  weiter — im Protokoll ist von der Unterbrechung nichts zu sehen, und die
+  Pausenzeit zählt nicht zur Redezeit.
 - **Esc** beendet den Beitrag, ohne einen neuen zu beginnen.
 - **Einrichtung** ändert Titel, Mikrofon, Sprache, Verzögerung oder Redezeit —
   auch mitten in der Runde; die bisherigen Beiträge bleiben stehen. Wer im
@@ -109,17 +120,18 @@ noch schwankende Vermutung des Modells.
 ## Redezeit
 
 In der Einrichtung steht die **Redezeit** je Beitrag, standardmäßig fünf
-Minuten; `0` schaltet sie ab. Die Uhr färbt sich in der letzten Minute warm,
-danach kräftig, und die Bühne bekommt einen deutlichen Rand. Genau beim
-Überschreiten läuft ein weicher Zweiklang — einmal pro Beitrag, kein Alarm.
+Minuten; `0` schaltet sie ab. Der Zeitstrahl unter dem Kreis färbt sich in der
+letzten Minute warm, danach rot, und zählt die Überziehung mit einem `+`
+weiter. Genau beim Überschreiten läuft ein weicher Zweiklang — einmal pro
+Beitrag, kein Alarm.
 Weitergereicht wird trotzdem von Hand: die Zeit mahnt, sie unterbricht nicht.
 
 ## Ablenkungsfrei
 
-**Nur Sprecher** blendet Live-Text und Verlauf aus: es bleiben der Name in
-groß, die Uhr und der Pegel. Mitgeschrieben und gesichert wird unverändert
+**Nur Sprecher** im Mehr-Menü blendet den Verlauf aus: es bleiben der Kreis, der
+Zeitstrahl und die drei Griffe. Mitgeschrieben und gesichert wird unverändert
 weiter, ihr seht es nur nicht. Der Modus bleibt im Browser gemerkt, auch über
-das Neuladen hinweg, und lässt sich mit demselben Knopf (**Mit Text**) wieder
+das Neuladen hinweg, und lässt sich an derselben Stelle (**Mit Text**) wieder
 aufmachen. Zusammen mit **Vollbild** ist das die Ansicht für den Beamer oder
 für ein Gerät, das nur die Runde führt.
 
@@ -127,7 +139,7 @@ für ein Gerät, das nur die Runde führt.
 
 Die Runde wird fortlaufend nach `transcripts/<runde>.md` und `.json`
 geschrieben — nach jedem Beitrag und während des Sprechens alle drei Sekunden,
-auch wenn gerade niemand redet. Der Fußzeilen-Hinweis nennt die Datei.
+auch wenn gerade niemand redet.
 
 **Protokoll laden** holt den Stand jederzeit als Markdown, inklusive des
 Beitrags, der gerade läuft (im Export als *spricht noch* markiert). Ihr könnt
@@ -139,8 +151,8 @@ wird, entscheidet `TZ` auf dem Server; ohne Angabe ist das im Container UTC.
 
 ## Archiv in der App
 
-**Archiv** oben rechts — und **Frühere Runden** auf der Einrichtungsseite, damit
-man auch ohne laufenden Kreis hinkommt — zeigt alle bisherigen Runden: links die Liste mit Datum,
+**Archiv** im Mehr-Menü — und **Frühere Runden** auf der Einrichtungsseite,
+damit man auch ohne laufenden Kreis hinkommt — zeigt alle bisherigen Runden: links die Liste mit Datum,
 Anzahl der Beiträge und den Namen, rechts die gewählte Runde zum Nachlesen.
 **Als Markdown laden** holt sie einzeln herunter — in der Zeitzone des Geräts,
 das sie abruft.
@@ -205,8 +217,9 @@ Verlauf. Weiterreichen und Korrigieren kann jedes davon.
 **Den Ton liefert genau ein Gerät** — und zwar das Gerät dessen, der das
 Mikrofon gerade hat. Wird weitergereicht, wandert die Aufnahme mit: Das
 bisherige Gerät schließt sein Mikrofon, das nächste öffnet seins. Niemand muss
-etwas umstellen, und im Fuß steht, woran man ist: *„dieses Gerät nimmt auf"*
-oder *„Aufnahme bei Eva"*.
+etwas umstellen. Woran man ist, sagt der kleine Punkt unten links: rot, wenn
+dieses Gerät liefert, gedimmt, wenn ein anderes es tut (*„Aufnahme bei Eva"*
+steht dann im Titel), und leer, wenn niemand aufnimmt.
 
 Das ist keine Bequemlichkeit, sondern Bedingung: Vorher schickte jedes offene
 Gerät seinen eigenen Ton in denselben Erkennungsstrom. Zwei Geräte bedeuteten
@@ -226,10 +239,10 @@ sofort da, statt dass mitten im Satz eine Nachfrage aufgeht und der Anfang
 fehlt. Der Pegel zappelt auf jedem beigetretenen Gerät, gesendet wird trotzdem
 nur vom Gerät dessen, der dran ist. Der Preis dafür: Der Browser zeigt auf
 allen beigetretenen Geräten das Mikrofon-Symbol an, auch auf denen, die gerade
-nichts schicken. Wird die Freigabe verweigert, steht es im Fuß — dieses Gerät
-kann dann nicht aufnehmen.
+nichts schicken. Wird die Freigabe verweigert, steht es unten links neben dem
+Punkt — dieses Gerät kann dann nicht aufnehmen.
 
-**Hier aufnehmen** im Fuß holt den Ton von Hand auf das eigene Gerät. Das ist
+**Ein Druck auf den Punkt** holt den Ton von Hand auf das eigene Gerät. Das ist
 der Rückfall für das herumgereichte Mikrofon: Ist der Dranseiende gerade nicht
 verbunden — Telefon zugeklappt, Verbindung weg —, liefert weiter das Gerät, das
 die Aufnahme zuletzt übernommen hat. Bei der nächsten Übergabe gilt wieder die
