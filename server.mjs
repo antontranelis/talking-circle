@@ -89,6 +89,14 @@ const circle = new Circle({
   },
 });
 
+// Vor jeder Änderung am Verlauf: den jetzigen Stand auf die Platte und in die
+// Geschichte der Runde. Erst danach wird geändert — sonst stünde im Verlauf
+// der Runde schon das Ergebnis.
+function merkeVorher(beschreibung) {
+  circle.sichern();
+  merkeStand(circle.state.id, "bearbeitet", beschreibung);
+}
+
 function sendeAllen(nachricht) {
   const roh = JSON.stringify(nachricht);
   for (const ws of clients) {
@@ -300,10 +308,31 @@ wss.on("connection", (ws) => {
         case "fortsetzen":
           circle.fortsetzen();
           break;
+        // --- Bearbeiten im Verlauf ---
+        //
+        // Jede dieser Nachrichten ist eine kleine, eindeutige Änderung. Der
+        // Stand davor kommt in den Verlauf der Runde, bevor sie geschieht —
+        // im Archiv lässt sie sich einzeln zurücknehmen.
         case "aendern":
+          merkeVorher(`Beitrag ${Number(m.index) + 1} bearbeitet`);
           circle.beitragAendern(m.index, m);
           break;
+        case "teilen":
+          merkeVorher(`Beitrag ${Number(m.index) + 1} geteilt`);
+          if (!circle.beitragTeilen(m.index, m.stelle, m.sprecher)) {
+            ws.send(JSON.stringify({ typ: "fehler", text: "An dieser Stelle lässt sich der Beitrag nicht teilen." }));
+          }
+          break;
+        case "einfuegen":
+          merkeVorher("Beitrag eingefügt");
+          circle.beitragEinfuegen(m.index, m);
+          break;
+        case "verbinden":
+          merkeVorher(`Beitrag ${Number(m.index) + 1} mit dem vorigen verbunden`);
+          circle.beitragVerbinden(m.index);
+          break;
         case "loeschen":
+          merkeVorher(`Beitrag ${Number(m.index) + 1} gelöscht`);
           circle.beitragLoeschen(m.index);
           break;
       }

@@ -255,6 +255,57 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
 }
 .seite-kreis .verlauf li:hover .weg { opacity: 1; }
 
+/* --- Bearbeiten an Ort und Stelle --- */
+/* Ein abgeschlossener Eintrag lädt zum Antippen ein. */
+.seite-kreis .verlauf li.fertig { cursor: text; border-radius: 12px; }
+.seite-kreis .verlauf li.fertig:hover { background: rgba(36, 31, 28, 0.5); box-shadow: 0 0 0 6px rgba(36, 31, 28, 0.5); }
+
+/* Der Eintrag im Editiermodus sieht aus wie die Karte des laufenden Beitrags. */
+.seite-kreis li.bearbeiten {
+  background: var(--flaeche-hoch); border: 1px solid var(--akzent); border-radius: 16px;
+  padding: 9px 12px 11px; gap: 6px; cursor: auto;
+}
+.seite-kreis li.bearbeiten .eintrag-kopf { gap: 6px; }
+.name-feld {
+  font: 600 13px/1.4 var(--schrift); color: var(--akzent); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; padding: 2px 6px; margin-left: -6px;
+  width: 11rem; max-width: 60%;
+}
+.name-feld:hover { border-color: var(--rand); }
+.name-feld:focus { outline: none; border-color: var(--akzent-weich); background: var(--grund); }
+.text-feld {
+  font: 400 14px/1.5 var(--schrift); color: var(--text); background: transparent;
+  border: none; padding: 0; margin: 0; width: 100%; resize: none; overflow: hidden;
+  outline: none; text-wrap: pretty;
+}
+.eintrag-knoepfe { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.eintrag-knopf {
+  border: none; background: transparent; color: var(--gedimmt);
+  font: 500 11.5px/1 var(--schrift); padding: 5px 8px; border-radius: 7px;
+}
+.eintrag-knopf:hover { background: #2a2320; color: var(--text); border: none; }
+.eintrag-knopf.fertig { color: var(--akzent); }
+/* Geteilt wird an der Schreibmarke — gefragt wird nur, wer danach spricht. */
+.teilen-zeile { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; color: var(--gedimmt); }
+.teilen-zeile .name-feld { width: 9rem; border-color: var(--rand); color: var(--text); font-weight: 500; }
+.bearbeiten .fremd { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--zu-lang); }
+
+/* Das leise „+" zwischen zwei Einträgen. */
+.seite-kreis .verlauf li.plus { margin: -8px 0; }
+/* Der Verlauf steht weiter unten auf, auch wenn oben ein „+" beginnt. */
+.seite-kreis .verlauf ol > li.plus:first-child { margin-top: auto; }
+.seite-kreis .verlauf li.plus button {
+  width: 100%; height: 16px; padding: 0; border: none; background: transparent;
+  color: var(--gedimmt-tief); font-size: 13px; line-height: 1; opacity: 0;
+  border-radius: 6px;
+}
+.seite-kreis .verlauf li.plus button:hover { opacity: 1; background: #241f1c; color: var(--akzent); }
+.seite-kreis .verlauf li.plus button:focus-visible { opacity: 1; }
+/* Am Finger gibt es kein Schweben — dort steht das „+" gedimmt immer da. */
+@media (hover: none) {
+  .seite-kreis .verlauf li.plus button { opacity: 0.45; }
+}
+
 /* Der laufende Beitrag: dieselbe Formatierung, nur in einer gefassten Karte. */
 .seite-kreis li.laufend {
   background: var(--flaeche-hoch); border: 1px solid var(--akzent-weich); border-radius: 16px;

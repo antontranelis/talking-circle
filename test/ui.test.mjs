@@ -398,3 +398,56 @@ test("Nur Sprecher gibt dem Kreis die ganze Fläche — und der Weg zurück steh
   assert.equal(await a.seite.isVisible("#mit-text"), false);
 });
 
+
+test("Im Verlauf wird an Ort und Stelle bearbeitet — das andere Gerät sieht beide Teile", async (t) => {
+  if (!CHROME) return t.skip("kein Chrome gefunden");
+  const { chromium } = await import("playwright-core");
+  await starteServer(t, PORT + 7);
+  const browser = await chromium.launch({ executablePath: CHROME });
+  t.after(() => browser.close());
+
+  const a = await geraet(browser, PORT + 7);
+  const b = await geraet(browser, PORT + 7);
+  await trittBei(a.seite, "Anton");
+  await trittBei(b.seite, "Eva");
+
+  // Das „+" legt einen Beitrag an, der gleich offen zum Schreiben steht.
+  await a.seite.click("#beitraege li.plus button");
+  await a.seite.waitForSelector("#beitraege li.bearbeiten", { timeout: 8000 });
+  await a.seite.fill('#beitraege .bearbeiten [data-rolle="name"]', "Anton");
+  await a.seite.fill('#beitraege .bearbeiten [data-rolle="text"]', "Erster Teil. Und jetzt rede ich.");
+  await a.seite.click('#beitraege .bearbeiten .eintrag-knopf.fertig');
+
+  await b.seite.waitForFunction(
+    () => [...document.querySelectorAll("#beitraege .was")].some((e) => e.textContent.includes("Erster Teil.")),
+    null,
+    { timeout: 8000 },
+  );
+
+  // Und jetzt teilen: Schreibmarke vor den zweiten Satz, „Hier teilen", Name.
+  await a.seite.click("#beitraege li.fertig");
+  await a.seite.waitForSelector("#beitraege li.bearbeiten");
+  await a.seite.evaluate(() => {
+    const feld = document.querySelector('#beitraege .bearbeiten [data-rolle="text"]');
+    const wo = feld.value.indexOf("Und jetzt");
+    feld.focus();
+    feld.setSelectionRange(wo, wo);
+  });
+  await a.seite.click('#beitraege .bearbeiten .eintrag-knopf'); // „Hier teilen"
+  await a.seite.fill('#beitraege .teilen-zeile [data-rolle="teilen-name"]', "Eva");
+  await a.seite.click('#beitraege .teilen-zeile .eintrag-knopf.fertig');
+
+  // Beide Geräte sehen zwei Beiträge — mit zwei Sprechern.
+  for (const seite of [a.seite, b.seite]) {
+    await seite.waitForFunction(() => document.querySelectorAll("#beitraege li.fertig").length === 2, null, {
+      timeout: 8000,
+    });
+    const gelesen = await seite.$$eval("#beitraege li.fertig", (ls) =>
+      ls.map((l) => [l.querySelector(".wer").textContent, l.querySelector(".was").textContent]),
+    );
+    assert.deepEqual(gelesen, [
+      ["Anton", "Erster Teil."],
+      ["Eva", "Und jetzt rede ich."],
+    ]);
+  }
+});

@@ -864,3 +864,62 @@ test("Das Aufnahmegerät lässt sich festlegen — und wieder auf Automatik stel
   b.ws.close();
 });
 
+
+test("Im Verlauf wird an Ort und Stelle bearbeitet — und alle Geräte sehen es", async (t) => {
+  const port = PORT + 12;
+  await starteServer(t, port);
+  const a = await verbinde(port);
+  const b = await verbinde(port);
+
+  // Ein Beitrag, den niemand mitgeschrieben hat: von Hand eingefügt.
+  a.ws.send(
+    JSON.stringify({
+      typ: "einfuegen",
+      index: 0,
+      sprecher: "Holger",
+      text: "Mein Traum ist kleiner. Und ich bin Agnes und rede schon weiter.",
+    }),
+  );
+  const beiB = await warteAuf(() => {
+    const liste = letzterZustand(b.eingang)?.beitraege;
+    return liste?.length ? liste : null;
+  }, "der eingefügte Beitrag auf dem zweiten Gerät");
+  assert.equal(beiB[0].sprecher, "Holger");
+
+  // Zwei Menschen stecken in einem Beitrag: an der Stelle teilen.
+  const stelle = beiB[0].text.indexOf("Und ich bin Agnes");
+  a.ws.send(JSON.stringify({ typ: "teilen", index: 0, stelle, sprecher: "Agnes" }));
+  const geteilt = await warteAuf(() => {
+    const liste = letzterZustand(b.eingang)?.beitraege;
+    return liste?.length === 2 ? liste : null;
+  }, "der geteilte Beitrag");
+  assert.deepEqual(geteilt.map((x) => x.sprecher), ["Holger", "Agnes"]);
+  assert.equal(geteilt[0].text, "Mein Traum ist kleiner.");
+  assert.ok(new Date(geteilt[1].begonnen) > new Date(geteilt[0].begonnen), "der zweite Teil beginnt nicht später");
+
+  // Name und Text eines Beitrags richtigstellen.
+  a.ws.send(JSON.stringify({ typ: "aendern", index: 1, sprecher: "Agnes", text: "Und ich rede schon weiter." }));
+  await warteAuf(() => letzterZustand(a.eingang)?.beitraege[1]?.text === "Und ich rede schon weiter.", "die Korrektur");
+
+  // Und wieder zusammen: Der Text hängt sich an den vorigen.
+  a.ws.send(JSON.stringify({ typ: "verbinden", index: 1 }));
+  const verbunden = await warteAuf(() => {
+    const liste = letzterZustand(a.eingang)?.beitraege;
+    return liste?.length === 1 ? liste : null;
+  }, "das Zusammenführen");
+  assert.equal(verbunden[0].sprecher, "Holger");
+  assert.equal(verbunden[0].text, "Mein Traum ist kleiner. Und ich rede schon weiter.");
+
+  // Jeder Schritt steht im Verlauf der Runde — rücknehmbar im Archiv.
+  const id = letzterZustand(a.eingang).id;
+  const schritte = await (await fetch(`http://127.0.0.1:${port}/api/runde/${id}/historie`)).json();
+  assert.ok(schritte.length >= 3, `nur ${schritte.length} Schritte im Verlauf der Runde`);
+  assert.deepEqual([...new Set(schritte.map((s) => s.aktion))], ["bearbeitet"]);
+  assert.ok(
+    schritte.some((s) => s.beschreibung.includes("geteilt")),
+    "das Teilen steht nicht im Verlauf der Runde",
+  );
+
+  a.ws.close();
+  b.ws.close();
+});

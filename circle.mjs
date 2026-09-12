@@ -7,6 +7,7 @@ import path from "node:path";
 import { TranscribeModel } from "transcribe-cpp";
 import { resolveModel } from "./model.mjs";
 import { alsJsonl, alsMarkdown, standardZone } from "./protokoll.mjs";
+import { einfuegen, teilen, verbinden } from "./beitraege.mjs";
 // Wohin die Runden geschrieben werden, entscheidet das Archiv — es liest den
 // Ordner aus der Umgebung.
 import { WURZEL as TRANSCRIPTS } from "./archiv.mjs";
@@ -339,6 +340,31 @@ export class Circle {
     if (typeof sprecher === "string") b.sprecher = sprecher;
     this.sichern();
     this.#onChange("state");
+  }
+
+  // Ein Beitrag wird an einer Stelle im Text in zwei geteilt: Die Leertaste kam
+  // zu spät, und zwei Menschen stecken in einem Beitrag.
+  beitragTeilen(index, stelle, sprecher) {
+    return this.#umformen(teilen(this.state.beitraege, index, stelle, sprecher));
+  }
+
+  // Ein Beitrag, den niemand mitgeschrieben hat, rückt zwischen zwei andere.
+  beitragEinfuegen(index, { sprecher, text } = {}) {
+    return this.#umformen(einfuegen(this.state.beitraege, index, { sprecher, text }));
+  }
+
+  // Und der Gegenweg: Was fälschlich getrennt wurde, wandert in den vorigen.
+  beitragVerbinden(index) {
+    return this.#umformen(verbinden(this.state.beitraege, index));
+  }
+
+  // Die Umformungen sind rein — hier wird die neue Liste zur Runde.
+  #umformen(neu) {
+    if (!neu) return false;
+    this.state.beitraege = neu;
+    this.sichern();
+    this.#onChange("state");
+    return true;
   }
 
   beitragLoeschen(index) {

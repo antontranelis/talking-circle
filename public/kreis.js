@@ -579,29 +579,61 @@ let karteNode = null; // die Karte des laufenden Beitrags
 
 function zeichneVerlauf() {
   const ol = $("beitraege");
+  // Ein eben eingefügter Beitrag steht jetzt da — und will gleich offen sein.
+  if (oeffneNach !== null && state.beitraege[oeffneNach]) {
+    const wo = oeffneNach;
+    oeffneNach = null;
+    return bearbeitungOeffnen(wo);
+  }
   karteNode = null;
-  const stuecke = state.beitraege.map((b, i) => eintrag(b, i));
+  bearbeitungPruefen();
+  namensVorschlaegeStellen();
+
+  const stuecke = [];
+  state.beitraege.forEach((b, i) => {
+    stuecke.push(plusZeile(i));
+    stuecke.push(bearbeitung?.index === i ? bearbeitungsNode(b) : eintrag(b, i));
+  });
+  stuecke.push(plusZeile(state.beitraege.length));
   if (state.aktiv) stuecke.push((karteNode = laufendeKarte(state.aktiv)));
   $("anzahl").textContent = state.beitraege.length === 1 ? "1 Beitrag" : `${state.beitraege.length} Beiträge`;
-  if (!stuecke.length) {
-    ol.replaceChildren(
+  if (!state.beitraege.length && !state.aktiv) {
+    stuecke.unshift(
       hinweis(
         kreis().length
           ? "Noch nichts gesagt — die Leertaste gibt den Redestab weiter."
           : "Noch ist niemand im Kreis — trag oben deinen Namen ein.",
       ),
     );
-    return;
   }
+
   const folgen = amEnde(ol);
+  const merk = eingabeMerken();
   ol.replaceChildren(...stuecke);
-  if (folgen) ol.scrollTop = ol.scrollHeight;
+  eingabeZurueck(merk);
+  if (folgen && !bearbeitung) ol.scrollTop = ol.scrollHeight;
 }
 
 // Der Verlauf folgt dem Gesprochenen nur, solange man unten steht. Wer
 // hochgescrollt hat, um nachzulesen, wird nicht wieder nach unten gezogen.
 function amEnde(ol) {
   return ol.scrollHeight - ol.scrollTop - ol.clientHeight < 40;
+}
+
+// Eine offene Eingabe überlebt das Neuzeichnen: Das Feld ist dasselbe
+// Element, nur die Schreibmarke muss zurück.
+function eingabeMerken() {
+  const wer = document.activeElement;
+  if (!bearbeitungNode?.contains(wer)) return null;
+  return { rolle: wer.dataset.rolle, von: wer.selectionStart, bis: wer.selectionEnd };
+}
+
+function eingabeZurueck(merk) {
+  if (!merk) return;
+  const feld = bearbeitungNode?.querySelector(`[data-rolle="${merk.rolle}"]`);
+  if (!feld) return;
+  feld.focus();
+  if (merk.von !== null && merk.von !== undefined) feld.setSelectionRange(merk.von, merk.bis);
 }
 
 function kopfzeile(name, zeit) {
@@ -612,10 +644,12 @@ function kopfzeile(name, zeit) {
   wer.textContent = name;
   const wann = document.createElement("span");
   wann.className = "wann";
-  wann.textContent = new Date(zeit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  wann.textContent = uhrzeit(zeit);
   kopf.append(wer, wann);
   return kopf;
 }
+
+const uhrzeit = (zeit) => new Date(zeit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 
 function eintrag(b, i) {
   const li = document.createElement("li");
@@ -626,18 +660,278 @@ function eintrag(b, i) {
   weg.className = "weg";
   weg.title = "Beitrag löschen";
   weg.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-  weg.onclick = () => sende({ typ: "loeschen", index: i });
+  weg.onclick = (ev) => {
+    ev.stopPropagation();
+    bearbeitungBeenden();
+    sende({ typ: "loeschen", index: i });
+  };
   kopf.append(weg);
 
-  // Geändert wird im Protokoll unter dem Stift, nicht in der Zeile — sonst
-  // gäbe es zwei Wege zum selben Text.
   const was = document.createElement("p");
   was.className = "was";
   was.textContent = b.text;
 
+  // Ein Antippen macht den Eintrag an Ort und Stelle editierbar — mit der
+  // Tastatur tut die Eingabetaste dasselbe.
+  li.className = "fertig";
+  li.title = "Antippen zum Bearbeiten";
+  li.tabIndex = 0;
+  li.onclick = () => bearbeitungOeffnen(i);
+  li.onkeydown = (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    bearbeitungOeffnen(i);
+  };
   li.append(kopf, was);
   return li;
 }
+
+// --- Bearbeiten an Ort und Stelle -----------------------------------------
+//
+// Ein abgeschlossener Eintrag lässt sich antippen: Name und Text werden zu
+// Feldern, darunter stehen die vier leisen Knöpfe. Der laufende Beitrag bleibt
+// unangetastet — er wächst ja noch.
+
+let bearbeitung = null; // { index, urSprecher, urText, warLeer, fremd, teilenAb }
+let bearbeitungNode = null; // sein Element, damit die Eingabe das Neuzeichnen übersteht
+let oeffneNach = null; // ein eben eingefügter Beitrag will gleich offen sein
+
+function bearbeitungOeffnen(index) {
+  if (bearbeitung?.index === index) return;
+  bearbeitungUebernehmen(); // ein offener Eintrag daneben wird dabei fertig
+  const b = state.beitraege[index];
+  if (!b) return;
+  bearbeitung = {
+    index,
+    urSprecher: b.sprecher,
+    urText: b.text,
+    warLeer: !b.text.trim(),
+    fremd: false,
+    teilenAb: null,
+  };
+  bearbeitungNode = null;
+  zeichneVerlauf();
+  const feld = bearbeitungNode?.querySelector('[data-rolle="text"]');
+  feld?.focus();
+  if (bearbeitung.warLeer) bearbeitungNode?.querySelector('[data-rolle="name"]')?.select();
+}
+
+// Übernehmen: eine Nachricht, wenn sich etwas geändert hat. Sonst nichts.
+function bearbeitungUebernehmen() {
+  if (!bearbeitung) return;
+  const { index, urSprecher, urText, warLeer } = bearbeitung;
+  const sprecher = bearbeitungNode.querySelector('[data-rolle="name"]').value.trim();
+  const text = bearbeitungNode.querySelector('[data-rolle="text"]').value.trim();
+  bearbeitungBeenden();
+  // Ein eingefügter Beitrag, in dem nichts steht, war ein Versehen.
+  if (warLeer && !text) return sende({ typ: "loeschen", index });
+  if (sprecher === urSprecher && text === urText) return;
+  sende({ typ: "aendern", index, sprecher: sprecher || urSprecher, text });
+}
+
+// Abbrechen: Der Eintrag steht wieder da, wie er im Kreis steht — auch wenn
+// ihn inzwischen jemand anderes geändert hat.
+function bearbeitungAbbrechen() {
+  bearbeitungBeenden();
+  zeichneVerlauf();
+}
+
+function bearbeitungBeenden() {
+  if (!bearbeitung) return;
+  bearbeitung = null;
+  bearbeitungNode = null;
+}
+
+// Zwischen zwei Zuständen: Ist der Eintrag verschwunden, ist auch das
+// Bearbeiten vorbei. Hat ihn jemand anderes angefasst, wird es gesagt.
+function bearbeitungPruefen() {
+  if (!bearbeitung) return;
+  const b = state.beitraege[bearbeitung.index];
+  if (!b) return bearbeitungBeenden();
+  if (b.sprecher !== bearbeitung.urSprecher || b.text !== bearbeitung.urText) bearbeitung.fremd = true;
+}
+
+function bearbeitungsNode(b) {
+  if (bearbeitungNode) {
+    bearbeitungNode.querySelector(".fremd").hidden = !bearbeitung.fremd;
+    return bearbeitungNode;
+  }
+  const li = document.createElement("li");
+  li.className = "bearbeiten";
+  li.onclick = (ev) => ev.stopPropagation();
+  // Escape gehört hier dem Eintrag, nicht dem Kreis: es bricht ab, es beendet
+  // keinen Beitrag.
+  li.onkeydown = (ev) => {
+    if (ev.key !== "Escape") return;
+    ev.stopPropagation();
+    bearbeitungAbbrechen();
+  };
+
+  const kopf = document.createElement("div");
+  kopf.className = "eintrag-kopf";
+  const name = document.createElement("input");
+  name.type = "text";
+  name.className = "name-feld";
+  name.dataset.rolle = "name";
+  name.maxLength = 60;
+  name.value = b.sprecher;
+  name.setAttribute("list", "kreis-namen");
+  name.setAttribute("aria-label", "Wer hat das gesagt");
+  const wann = document.createElement("span");
+  wann.className = "wann";
+  wann.textContent = uhrzeit(b.begonnen);
+  kopf.append(name, wann);
+
+  const feld = document.createElement("textarea");
+  feld.className = "text-feld";
+  feld.dataset.rolle = "text";
+  feld.rows = 1;
+  feld.value = b.text;
+  feld.setAttribute("aria-label", "Was gesagt wurde");
+  feld.oninput = () => hoeheNachziehen(feld);
+  feld.onkeydown = (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      teilenAnbieten(li, feld);
+    }
+  };
+
+  const fremd = document.createElement("p");
+  fremd.className = "fremd";
+  fremd.hidden = !bearbeitung.fremd;
+  fremd.textContent = "Jemand anderes hat diesen Beitrag inzwischen geändert. Abbrechen zeigt seine Fassung.";
+
+  const knoepfe = document.createElement("div");
+  knoepfe.className = "eintrag-knoepfe";
+  knoepfe.append(
+    knopf("Hier teilen", () => teilenAnbieten(li, feld)),
+    knopf("Mit vorigem verbinden", () => {
+      const index = bearbeitung.index;
+      bearbeitungUebernehmen();
+      sende({ typ: "verbinden", index });
+    }),
+    knopf("Löschen", () => {
+      const index = bearbeitung.index;
+      bearbeitungBeenden();
+      sende({ typ: "loeschen", index });
+    }),
+    knopf("Fertig", () => bearbeitungUebernehmen(), "fertig"),
+  );
+
+  li.append(kopf, feld, fremd, knoepfe);
+  bearbeitungNode = li;
+  // Erst im Baum kennt das Feld seine Breite — dann stimmt auch die Höhe.
+  queueMicrotask(() => hoeheNachziehen(feld));
+  return li;
+}
+
+function knopf(wort, tun, art = "") {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `eintrag-knopf ${art}`.trim();
+  b.textContent = wort;
+  b.onclick = tun;
+  return b;
+}
+
+// Das Textfeld wächst mit dem Text, statt zu scrollen.
+function hoeheNachziehen(feld) {
+  feld.style.height = "auto";
+  feld.style.height = `${feld.scrollHeight}px`;
+}
+
+// Teilen: Die Schreibmarke sagt, wo — gefragt wird nur noch, wer danach
+// spricht. Vorgabe ist der im Kreis Nächste.
+function teilenAnbieten(li, feld) {
+  const stelle = feld.selectionStart;
+  if (!feld.value.slice(0, stelle).trim() || !feld.value.slice(stelle).trim()) {
+    return melden("Setz die Schreibmarke dorthin, wo der nächste Mensch anfängt.", true);
+  }
+  bearbeitung.teilenAb = stelle;
+  li.querySelector(".teilen-zeile")?.remove();
+
+  const zeile = document.createElement("div");
+  zeile.className = "teilen-zeile";
+  const wort = document.createElement("span");
+  wort.textContent = "Ab hier spricht";
+  const name = document.createElement("input");
+  name.type = "text";
+  name.className = "name-feld";
+  name.dataset.rolle = "teilen-name";
+  name.maxLength = 60;
+  name.setAttribute("list", "kreis-namen");
+  name.setAttribute("aria-label", "Wer spricht ab hier");
+  name.value = naechsterNach(li.querySelector('[data-rolle="name"]').value);
+  name.onkeydown = (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      teilen();
+    }
+  };
+  const teilen = () => {
+    const index = bearbeitung.index;
+    const sprecher = name.value.trim();
+    bearbeitungUebernehmen(); // die Stelle zählt im Text, wie er jetzt dasteht
+    sende({ typ: "teilen", index, stelle, sprecher });
+  };
+  zeile.append(wort, name, knopf("Teilen", teilen, "fertig"), knopf("Zurück", () => zeile.remove()));
+  li.querySelector(".eintrag-knoepfe").before(zeile);
+  name.focus();
+  name.select();
+}
+
+// Wer im Kreis nach diesem Menschen sitzt — die übliche Vermutung, wenn ein
+// Beitrag geteilt oder ein vergessener nachgetragen wird.
+function naechsterNach(name) {
+  const namen = kreis().map((t) => t.name);
+  if (!namen.length) return "";
+  const wo = namen.indexOf(name);
+  return wo === -1 ? namen[0] : namen[(wo + 1) % namen.length];
+}
+
+// Die Namen aus dem Kreis und aus dem Protokoll stehen in jedem Namensfeld
+// als Vorschlag.
+function namensVorschlaegeStellen() {
+  const namen = [...new Set([...kreis().map((t) => t.name), ...state.beitraege.map((b) => b.sprecher)])];
+  const liste = $("kreis-namen");
+  if (namen.join(" ") === liste.dataset.stand) return;
+  liste.dataset.stand = namen.join(" ");
+  liste.replaceChildren(...namen.map((n) => Object.assign(document.createElement("option"), { value: n })));
+}
+
+// Zwischen zwei Einträgen — und vor dem ersten, hinter dem letzten — liegt
+// eine schmale Zeile mit einem leisen „+". Sie legt einen leeren Beitrag an,
+// dessen Zeit zwischen den Nachbarn liegt.
+function plusZeile(index) {
+  const li = document.createElement("li");
+  li.className = "plus";
+  const knopf = document.createElement("button");
+  knopf.type = "button";
+  knopf.title = "Beitrag einfügen";
+  knopf.setAttribute("aria-label", "Beitrag einfügen");
+  knopf.textContent = "+";
+  knopf.onclick = (ev) => {
+    ev.stopPropagation();
+    bearbeitungUebernehmen();
+    oeffneNach = index;
+    sende({
+      typ: "einfuegen",
+      index,
+      sprecher: naechsterNach(state.beitraege[index - 1]?.sprecher ?? ""),
+      text: "",
+    });
+  };
+  li.append(knopf);
+  return li;
+}
+
+// Ein Klick daneben übernimmt — wie das Verlassen eines Feldes. Was beim
+// Neuzeichnen gerade aus dem Baum fiel, zählt nicht als „daneben": Sonst
+// schlösse der Klick, der den Eintrag eben geöffnet hat, ihn gleich wieder.
+document.addEventListener("click", (ev) => {
+  if (!bearbeitung || !ev.target.isConnected || bearbeitungNode?.contains(ev.target)) return;
+  bearbeitungUebernehmen();
+});
 
 // Der laufende Beitrag steht in einer gefassten Karte — innen formatiert wie
 // jeder andere Eintrag. Im Halt verliert der Rahmen sein Bernstein.
