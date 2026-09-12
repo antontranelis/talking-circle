@@ -296,7 +296,7 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
 .editor-feld .spiegel,
 .editor-feld textarea {
   position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
-  padding: 14px 16px; border: none; border-radius: 0; background: transparent;
+  padding: 14px 16px 6em; border: none; border-radius: 0; background: transparent;
   font-family: var(--schrift-mono); font-size: 12.5px; line-height: 1.7;
   white-space: pre-wrap; overflow-wrap: break-word; tab-size: 2;
 }
@@ -310,11 +310,8 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
   position: absolute; left: 0; top: -15px; font-size: 9.5px; line-height: 1;
   padding: 2px 4px; border-radius: 3px 3px 3px 0; color: #201b18; white-space: nowrap; font-weight: 600;
 }
-.editor-offen {
-  margin: 0; padding: 0 16px 14px; color: #8b8079; font-size: 12.5px; line-height: 1.7;
-  max-height: 4.5em; overflow: hidden; flex: none;
-}
-.editor-offen:empty { display: none; }
+/* Der vorläufige Text der Erkennung, gedimmt hinter dem Dokument. */
+.spiegel .offen { color: #8b8079; }
 .stift.an { border-color: var(--akzent-weich); color: var(--akzent); }
 
 /* --- Die Ecke unten links: ein Punkt, drei Zustände --- */

@@ -895,6 +895,15 @@ function spiegelZeichnen() {
     stelle = bis;
   }
   spiegel.append(document.createTextNode(text.slice(stelle)));
+  // Der vorläufige Text der Erkennung steht gedimmt direkt hinter dem
+  // Dokument — im Spiegel, damit ihn niemand anfassen kann.
+  const offen = state?.aktiv?.tentative ?? "";
+  if (offen) {
+    const span = document.createElement("span");
+    span.className = "offen";
+    span.textContent = (text.endsWith("\n") || !text ? "" : " ") + offen;
+    spiegel.append(span);
+  }
   spiegel.scrollTop = $("editor-feld").scrollTop;
 }
 
@@ -902,7 +911,7 @@ function spiegelZeichnen() {
 // Dokument und lässt sich nicht anfassen.
 function offenenTextZeigen() {
   if (!editorOffen) return;
-  $("editor-offen").textContent = state?.aktiv?.tentative ?? "";
+  spiegelZeichnen();
 }
 
 // --- Einstellungen: ein Blatt über dem Kreis ------------------------------

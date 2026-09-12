@@ -122,9 +122,18 @@ export class Protokollbuch {
     }
     const fest = aktiv.committed.trim();
     if (fest === this.#angehaengt) return;
+    const roh = this.#text.toString();
+    const rumpf = this.#laufenderRumpf(roh);
     if (this.#angehaengt && !fest.startsWith(this.#angehaengt)) {
-      // Der Strom hat sich neu gefasst. Was im Dokument steht, bleibt stehen —
-      // doppelter Text wäre schlimmer als ein fehlender Nachtrag.
+      // Der Strom hat sich neu gefasst. Steht im Dokument noch genau das, was
+      // die Erkennung zuletzt geschrieben hat, wird es ersetzt. Hat jemand
+      // darin getippt, bleibt sein Text stehen — die Übernahme gleicht ab.
+      if (rumpf && rumpf.text.trim() === this.#angehaengt) {
+        this.#schreiben(() => {
+          this.#text.delete(rumpf.von, rumpf.text.length);
+          this.#text.insert(rumpf.von, fest);
+        });
+      }
       this.#angehaengt = fest;
       return;
     }
@@ -132,12 +141,22 @@ export class Protokollbuch {
     const warLeer = this.#angehaengt === "";
     this.#angehaengt = fest;
     if (!dazu.trim()) return;
-    const roh = this.#text.toString();
     // Das neue Wort gehört hinter das letzte Wort, nicht hinter die Leerzeile
     // darunter. Beim ersten Wort eines Beitrags aber genau dorthin: unter die
     // Überschrift.
     const stelle = warLeer ? roh.length : roh.replace(/\s+$/, "").length;
     this.#schreiben(() => this.#text.insert(stelle, warLeer ? dazu.trimStart() : dazu));
+  }
+
+  // Der Text unter der letzten Überschrift — das ist der laufende Beitrag.
+  #laufenderRumpf(roh) {
+    const kopf = roh.lastIndexOf("\n## ");
+    if (kopf === -1) return null;
+    const zeilenende = roh.indexOf("\n", kopf + 1);
+    if (zeilenende === -1) return null;
+    let von = zeilenende + 1;
+    while (roh[von] === "\n") von++; // die Leerzeile unter der Überschrift bleibt
+    return { von, text: roh.slice(von).replace(/\s+$/, "") };
   }
 
   // Der Titel kann auch aus den Einstellungen kommen — dann gehört er in die

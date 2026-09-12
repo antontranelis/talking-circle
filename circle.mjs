@@ -349,29 +349,41 @@ export class Circle {
     const aktiv = this.state.aktiv;
     if (!aktiv) return false;
     if (typeof sprecher === "string" && sprecher.trim()) aktiv.sprecher = sprecher.trim();
-    aktiv.vorher = String(text ?? "").trim();
-    aktiv.committed = aktiv.vorher;
-    aktiv.tentative = "";
-    const stream = this.#stream;
-    if (!stream) return true;
-    this.#stream = null;
-    try {
-      await stream.finalize();
-    } catch (err) {
-      console.error("Finalisieren beim Neufassen fehlgeschlagen:", err.message);
-    }
-    try {
-      stream.reset();
-    } catch {}
-    if (this.state.aktiv !== aktiv || !this.#session) return true;
-    this.#stream = await this.#session.stream({
-      language: this.state.sprache,
-      commitPolicy: "stable_prefix",
-      family: { kind: "parakeet", attContextRight: this.state.attContextRight },
+    // Im Takt der Feeds: So wartet der Ton, der währenddessen ankommt, auf den
+    // neuen Strom, statt ins Leere zu laufen.
+    // Was der Strom jetzt schon festgeschrieben hat, steht im Buch. Alles,
+    // was bis zum Abschluss noch dazukommt, ist neu.
+    const bisher = this.#stream?.text.committed ?? "";
+    this.#queue = this.#queue.then(async () => {
+      if (this.state.aktiv !== aktiv) return;
+      const stream = this.#stream;
+      aktiv.vorher = String(text ?? "").trim();
+      aktiv.committed = aktiv.vorher;
+      aktiv.tentative = "";
+      if (!stream) return;
+      this.#stream = null;
+      try {
+        // Was der alte Strom beim Abschluss noch festschreibt, war schon
+        // gesprochen — es gehört hinter die Korrektur, nicht in den Papierkorb.
+        await stream.finalize();
+        const rest = stream.text.committed.slice(bisher.length).trim();
+        if (rest) aktiv.vorher = aktiv.committed = `${aktiv.vorher} ${rest}`.trim();
+      } catch (err) {
+        console.error("Finalisieren beim Neufassen fehlgeschlagen:", err.message);
+      }
+      try {
+        stream.reset();
+      } catch {}
+      if (this.state.aktiv !== aktiv || !this.#session) return;
+      this.#stream = await this.#session.stream({
+        language: this.state.sprache,
+        commitPolicy: "stable_prefix",
+        family: { kind: "parakeet", attContextRight: this.state.attContextRight },
+      });
     });
+    await this.#queue.catch(() => {});
     return true;
   }
-
 
   beitragAendern(index, { text, sprecher }) {
     const b = this.state.beitraege[index];

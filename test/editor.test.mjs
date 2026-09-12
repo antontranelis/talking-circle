@@ -194,3 +194,33 @@ test("Ohne laufenden Beitrag wird auch der letzte Abschnitt ein Beitrag", () => 
   assert.equal(zurueck.laufend, null);
   assert.deepEqual(zurueck.beitraege.map((b) => b.sprecher), ["Holger", "Agnes"]);
 });
+
+test("Fasst sich der Strom neu, ersetzt das Buch den unberührten laufenden Text", () => {
+  // Der Fehler, den das hier abfängt: Nach einem Neuaufsetzen der Erkennung
+  // passte der neue Text nicht mehr an den alten an — und das Buch hängte
+  // gar nichts mehr an. Der Verlauf lief weiter, der Editor blieb stehen.
+  const kreis = kreisAttrappe();
+  const buch = new Protokollbuch(kreis, { zeitzone: zone });
+  kreis.state.aktiv.committed = "Ganz anderer Anfang, dann weiter.";
+  buch.nachziehen();
+  assert.match(buch.markdown(), /## Janosch · 14:16\n\nGanz anderer Anfang, dann weiter\.\n?$/);
+  assert.doesNotMatch(buch.markdown(), /noch nicht zu Ende gedacht/);
+  buch.schliessen();
+});
+
+test("Hat jemand im laufenden Text getippt, bleibt sein Text auch beim Neufassen stehen", () => {
+  const kreis = kreisAttrappe();
+  const buch = new Protokollbuch(kreis, { zeitzone: zone });
+  const gerät = new Y.Doc();
+  Y.applyUpdate(gerät, buch.stand());
+  const text = gerät.getText("protokoll");
+  const stelle = text.toString().indexOf("noch nicht zu Ende");
+  gerät.transact(() => text.insert(stelle, "wirklich "));
+  buch.vonAussen(Y.encodeStateAsUpdate(gerät), "gerät");
+
+  kreis.state.aktiv.committed = "Ganz anderer Anfang.";
+  buch.nachziehen();
+  assert.match(buch.markdown(), /wirklich noch nicht zu Ende gedacht/);
+  assert.doesNotMatch(buch.markdown(), /Ganz anderer Anfang/);
+  buch.schliessen();
+});
