@@ -116,34 +116,41 @@ Einstellungen, Protokoll laden, Archiv, Nur Sprecher, Vollbild, Neue Runde.
 - **Neue Runde** schließt das Protokoll ab und fängt leer an. Der Kreis bleibt
   bestehen, das Mikrofon liegt wieder in der Mitte. Die alte Runde bleibt als
   eigene Datei liegen.
-- **Der Stift** über dem Verlauf macht aus ihm das Protokoll: ein Markdown-Text,
-  an dem alle Geräte zugleich schreiben.
+- **Ein Antippen im Verlauf** macht den Beitrag an Ort und Stelle
+  bearbeitbar — Name, Text, teilen, verbinden, löschen.
 
 Der Live-Text zeigt zwei Zustände: heller Text steht fest, grauer Text ist die
 noch schwankende Vermutung des Modells.
 
-## Gemeinsam am Protokoll schreiben
+## Im Verlauf korrigieren
 
-Der **Stift** oben rechts über dem Verlauf klappt das ganze Protokoll auf —
-denselben Text, den auch das Archiv zeigt: `# Titel`, dann je Beitrag
-`## Name · 14:37` und darunter, was gesagt wurde. Alle Geräte schreiben darin
-zugleich; wer mitschreibt, zeigen die farbigen Zeiger mit Namensfähnchen. Der
-**Haken** an derselben Stelle beendet das Bearbeiten.
+Jeder abgeschlossene Beitrag lässt sich **antippen** und steht dann dort, wo er
+steht, zum Bearbeiten: Der Name wird ein Feld mit den Namen aus dem Kreis als
+Vorschlag, der Text ein Feld, das mitwächst. **Escape** bricht ab, ein Klick
+daneben oder **Fertig** übernimmt. Der laufende Beitrag bleibt unangetastet —
+er wächst ja noch.
 
-Es gibt keinen Speichern-Knopf. Der Server liest den Text gedrosselt zurück und
-übernimmt ihn in die Runde — Titel, Beiträge und den, der gerade spricht. Jede
-Übernahme legt den Stand davor in den **Verlauf der Runde**; im Archiv lässt sie
-sich einzeln zurücknehmen.
+Darunter stehen die vier leisen Wege:
 
-Zwei Richtungen treffen sich in diesem Text, und sie kommen sich nicht in die
-Quere: Was die Erkennung festschreibt, hängt sie **immer ans Ende** — auch wenn
-jemand gerade weiter oben tippt. Nur der vorläufige Text steht gedimmt und
-unantastbar hinter dem Dokument, bis er fest wird.
+- **Hier teilen** (auch `Strg+Enter`) schneidet den Beitrag an der Schreibmarke
+  in zwei. Der erste behält Sprecher und Beginn, der zweite bekommt den, der im
+  Kreis als Nächstes sitzt — überschreibbar — und einen Beginn, der anteilig
+  zwischen Beginn und Ende liegt: dort, wo der Schnitt im Text liegt. Das ist
+  der häufigste Fall: Die Leertaste kam zu spät, zwei Menschen stecken in einem
+  Beitrag.
+- **Mit vorigem verbinden** hängt den Text an den Beitrag darüber. Sprecher und
+  Zeit des vorigen bleiben.
+- **Löschen** nimmt den Beitrag heraus.
+- Das **„+"** zwischen zwei Einträgen — und vor dem ersten, hinter dem letzten —
+  trägt einen Beitrag nach, den niemand mitgeschrieben hat. Seine Zeit liegt
+  zwischen den Nachbarn.
 
-Technisch ist das ein [Yjs](https://yjs.dev)-Dokument, das über dieselbe
-WebSocket-Leitung fließt wie alles andere. Yjs kommt unverändert aus
-`node_modules` (`/lib/…`, eine Einfuhrkarte in `index.html` zeigt darauf) — es
-gibt weiterhin keinen Bauschritt.
+Jede dieser Handlungen ist **eine kleine, eindeutige Änderung**: Sie geht sofort
+an alle Geräte und legt den Stand davor in den **Verlauf der Runde**; im Archiv
+lässt sie sich einzeln zurücknehmen. Wer gerade an einem Eintrag schreibt,
+verliert seine Eingabe nicht, wenn von anderswo etwas hereinkommt. Fasst jemand
+anderes denselben Eintrag an, steht es als Zeile darunter — und **Abbrechen**
+zeigt dessen Fassung.
 
 ## Redezeit
 
@@ -316,7 +323,7 @@ das Mikrofon sonst sperren; für alle anderen braucht es HTTPS.
 | `public/index.html`, `kreis.js` | Die laufende Runde: Bühne links, Verlauf rechts |
 | `public/verbindung.js` | Gemeinsame WebSocket-Leitung beider Seiten |
 | `protokoll.mjs` | Eine Runde als Markdown — und aus Markdown zurück |
-| `editor.mjs` | Das Protokollbuch: ein Yjs-Text, an dem alle zugleich schreiben |
+| `beitraege.mjs` | Beiträge umformen: teilen, einfügen, verbinden — reine Funktionen |
 | `archiv.mjs` | Gespeicherte Runden: bearbeiten, umbenennen, löschen, Historie |
 | `public/pcm-worklet.js` | Nimmt 16-kHz-Mono in 128-ms-Blöcken ab |
 
@@ -348,14 +355,17 @@ einem Gerät, und der Dranseiende ohne Verbindung. `test/kreis.test.mjs` prüft
 den Kreis selbst, ohne Modell: Beitritt, Wiederkommen ohne Doppelgänger, die
 Reihenfolge über Abwesende hinweg und die Karenzzeit beim Gehen.
 
-`test/editor.test.mjs` prüft das Protokollbuch ohne Server: den Weg vom Zustand
-ins Markdown und zurück, das Anhängen der Erkennung während jemand oben tippt,
-und dass zwei Geräte denselben Text sehen.
+`test/beitraege.test.mjs` prüft das Umformen ohne Server: wo der zweite Teil
+eines geteilten Beitrags anfängt, dass ein Schnitt am Rand nichts teilt, wohin
+ein nachgetragener Beitrag zeitlich gehört — und dass eine Runde über
+Mitternacht dabei kein Sonderfall ist.
 
 `test/ui.test.mjs` geht den Weg, den ein Mensch wirklich geht: zwei Browser als
 zwei Geräte, Namen ins Feld tippen, beitreten, **Leertaste** — und prüft, dass
 `dran` und die Aufnahme zwischen den Geräten wechseln, dass ein zweiter Tab
 niemandem den Platz nimmt, dass das Gehen im Kreis ankommt und dass ein
-gezogener Name auf beiden Geräten an seinem neuen Platz steht. Er braucht einen
+gezogener Name auf beiden Geräten an seinem neuen Platz steht. Und er trägt
+einen Beitrag über das „+" nach, teilt ihn an der Schreibmarke und prüft, dass
+das zweite Gerät beide Teile mit ihren Sprechern sieht. Er braucht einen
 Chrome auf der Platte (`CHROME_PFAD` setzt den Pfad) und wird übersprungen,
 wenn keiner da ist.
