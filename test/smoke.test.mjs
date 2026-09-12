@@ -7,7 +7,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
-import * as Y from "yjs";
 
 const WURZEL = path.join(import.meta.dirname, "..");
 const PORT = 8200 + Math.floor(Math.random() * 400);
@@ -865,69 +864,3 @@ test("Das Aufnahmegerät lässt sich festlegen — und wieder auf Automatik stel
   b.ws.close();
 });
 
-test("Am Protokoll schreiben alle zugleich — und der Kreis übernimmt es", async (t) => {
-  const port = PORT + 12;
-  await starteServer(t, port);
-  const a = await verbinde(port);
-  const b = await verbinde(port);
-
-  // Beide Geräte bekommen den Stand des Protokollbuchs beim Verbinden.
-  const stand = (k) => warteAuf(() => k.eingang.find((m) => m.typ === "ydoc" && m.stand), "Stand des Protokolls", 5000);
-  const docA = new Y.Doc();
-  const docB = new Y.Doc();
-  Y.applyUpdate(docA, Buffer.from((await stand(a)).stand, "base64"));
-  Y.applyUpdate(docB, Buffer.from((await stand(b)).stand, "base64"));
-  assert.match(docA.getText("protokoll").toString(), /^# Redekreis/);
-
-  // A schreibt einen Beitrag von Hand ins Protokoll.
-  const vorher = docB.getText("protokoll").toString();
-  const text = docA.getText("protokoll");
-  docA.transact(() => text.insert(text.length, "\n## Eva · 10:00\n\nIch habe das von Hand nachgetragen.\n"));
-  a.ws.send(JSON.stringify({ typ: "ydoc", update: Buffer.from(Y.encodeStateAsUpdate(docA)).toString("base64") }));
-
-  // B sieht dieselbe Änderung.
-  const beiB = await warteAuf(
-    () => {
-      const liste = b.eingang.filter((m) => m.typ === "ydoc" && m.update);
-      return liste.length ? liste : null;
-    },
-    "die Änderung auf dem zweiten Gerät",
-  );
-  for (const m of beiB) Y.applyUpdate(docB, Buffer.from(m.update, "base64"));
-  assert.notEqual(docB.getText("protokoll").toString(), vorher, "das zweite Gerät hat nichts bekommen");
-  assert.equal(docB.getText("protokoll").toString(), docA.getText("protokoll").toString());
-
-  // Und der Kreis übernimmt den Beitrag — ohne Speichern-Knopf.
-  const beitraege = await warteAuf(
-    () => {
-      const liste = letzterZustand(a.eingang)?.beitraege;
-      return liste?.length ? liste : null;
-    },
-    "die Übernahme in die Runde",
-    15_000,
-  );
-  assert.equal(beitraege.at(-1).sprecher, "Eva");
-  assert.equal(beitraege.at(-1).text, "Ich habe das von Hand nachgetragen.");
-
-  // Eine zweite Änderung — und die steht als Schritt in der Geschichte der
-  // Runde, denn jetzt gibt es einen Stand, der zurückgeholt werden kann.
-  const stelle = text.toString().indexOf("nachgetragen");
-  docA.transact(() => {
-    text.delete(stelle, "nachgetragen".length);
-    text.insert(stelle, "nachgetragen und noch einmal angefasst");
-  });
-  a.ws.send(JSON.stringify({ typ: "ydoc", update: Buffer.from(Y.encodeStateAsUpdate(docA)).toString("base64") }));
-  await warteAuf(
-    () => letzterZustand(a.eingang)?.beitraege.at(-1)?.text.includes("angefasst"),
-    "die zweite Übernahme",
-    15_000,
-  );
-
-  const id = letzterZustand(a.eingang).id;
-  const historie = await (await fetch(`http://127.0.0.1:${port}/api/runde/${id}/historie`)).json();
-  assert.ok(historie.length >= 1, "die Übernahme steht nicht im Verlauf der Runde");
-  assert.equal(historie.at(-1).aktion, "bearbeitet");
-
-  a.ws.close();
-  b.ws.close();
-});

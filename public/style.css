@@ -234,11 +234,6 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
   position: absolute; left: 0; right: 0; top: 0; height: 40px; z-index: 2; pointer-events: none;
   background: linear-gradient(var(--flaeche), rgba(29, 25, 23, 0));
 }
-.stift {
-  position: absolute; right: 0; top: 0; z-index: 3; width: 32px; height: 32px; padding: 0;
-  border-radius: 999px; display: grid; place-items: center;
-  background: var(--flaeche); border-color: transparent; color: var(--gedimmt);
-}
 .seite-kreis .verlauf ol {
   list-style: none; margin: 0; padding: 0; height: 100%; overflow-y: auto;
   display: flex; flex-direction: column; gap: 15px;
@@ -281,38 +276,6 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
   .tippt i { animation: none; opacity: 0.55; }
   .platz .av, .balken i, .schalter i { transition: none; }
 }
-
-/* --- Der Editor: der Verlauf wird zum Protokoll, an dem alle schreiben --- */
-/* Ein Rahmen um das Ganze: Text und der vorläufige Nachsatz stehen darin. */
-.editor {
-  position: absolute; inset: 0; display: flex; flex-direction: column;
-  background: var(--flaeche-hoch); border: 1px solid var(--akzent-weich); border-radius: 12px;
-  overflow: hidden;
-}
-.editor:focus-within { border-color: var(--akzent); }
-.editor-feld { position: relative; flex: 1; min-height: 0; }
-/* Spiegel und Feld liegen exakt übereinander: Der Spiegel trägt die Fähnchen
-   der anderen, das Feld nimmt die Eingabe. Beide brauchen denselben Satz. */
-.editor-feld .spiegel,
-.editor-feld textarea {
-  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
-  padding: 14px 16px 6em; border: none; border-radius: 0; background: transparent;
-  font-family: var(--schrift-mono); font-size: 12.5px; line-height: 1.7;
-  white-space: pre-wrap; overflow-wrap: break-word; tab-size: 2;
-}
-.editor-feld .spiegel { color: transparent; overflow: hidden; pointer-events: none; z-index: 1; }
-.editor-feld textarea {
-  z-index: 2; color: #e6ded7; resize: none; outline: none; overflow-y: auto;
-}
-/* Wer mitschreibt, zeigen allein die farbigen Cursor mit Namensfähnchen. */
-.spiegel .marke-cursor { position: relative; display: inline-block; width: 2px; height: 15px; vertical-align: -3px; }
-.spiegel .marke-cursor span {
-  position: absolute; left: 0; top: -15px; font-size: 9.5px; line-height: 1;
-  padding: 2px 4px; border-radius: 3px 3px 3px 0; color: #201b18; white-space: nowrap; font-weight: 600;
-}
-/* Der vorläufige Text der Erkennung, gedimmt hinter dem Dokument. */
-.spiegel .offen { color: #8b8079; }
-.stift.an { border-color: var(--akzent-weich); color: var(--akzent); }
 
 /* --- Die Ecke unten links: ein Punkt, drei Zustände --- */
 .rec-griff {
@@ -458,7 +421,6 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
   }
   .verlauf-kopf { display: none; }
   .verlauf-schleier { background: linear-gradient(var(--grund), rgba(20, 17, 15, 0)); }
-  .stift { background: var(--grund); }
   .kreisspalte { flex: 1; justify-content: center; gap: 14px; }
 
   /* Kreisansicht: der Ring füllt die Seite, die Steuerung sitzt darunter. */

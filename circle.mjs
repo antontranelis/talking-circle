@@ -332,59 +332,6 @@ export class Circle {
 
   // --- Bearbeiten ---------------------------------------------------------
 
-  // Was im Protokollbuch steht, gilt: Titel, Beiträge und der laufende Beitrag
-  // werden übernommen, wie sie dort stehen.
-  async uebernehmen({ titel, beitraege, laufend }) {
-    if (typeof titel === "string" && titel.trim()) this.state.titel = titel.trim();
-    if (Array.isArray(beitraege)) this.state.beitraege = beitraege;
-    if (this.state.aktiv && laufend) await this.neuFassen(laufend.text, laufend.sprecher);
-    this.sichern();
-    this.#onChange("state");
-  }
-
-  // Der laufende Beitrag wird neu gefasst. Der Erkennungsstrom fängt dabei von
-  // vorn an — sonst hinge sein bisheriger Text ein zweites Mal hinter der
-  // Korrektur, sobald das nächste Wort festgeschrieben wird.
-  async neuFassen(text, sprecher) {
-    const aktiv = this.state.aktiv;
-    if (!aktiv) return false;
-    if (typeof sprecher === "string" && sprecher.trim()) aktiv.sprecher = sprecher.trim();
-    // Im Takt der Feeds: So wartet der Ton, der währenddessen ankommt, auf den
-    // neuen Strom, statt ins Leere zu laufen.
-    // Was der Strom jetzt schon festgeschrieben hat, steht im Buch. Alles,
-    // was bis zum Abschluss noch dazukommt, ist neu.
-    const bisher = this.#stream?.text.committed ?? "";
-    this.#queue = this.#queue.then(async () => {
-      if (this.state.aktiv !== aktiv) return;
-      const stream = this.#stream;
-      aktiv.vorher = String(text ?? "").trim();
-      aktiv.committed = aktiv.vorher;
-      aktiv.tentative = "";
-      if (!stream) return;
-      this.#stream = null;
-      try {
-        // Was der alte Strom beim Abschluss noch festschreibt, war schon
-        // gesprochen — es gehört hinter die Korrektur, nicht in den Papierkorb.
-        await stream.finalize();
-        const rest = stream.text.committed.slice(bisher.length).trim();
-        if (rest) aktiv.vorher = aktiv.committed = `${aktiv.vorher} ${rest}`.trim();
-      } catch (err) {
-        console.error("Finalisieren beim Neufassen fehlgeschlagen:", err.message);
-      }
-      try {
-        stream.reset();
-      } catch {}
-      if (this.state.aktiv !== aktiv || !this.#session) return;
-      this.#stream = await this.#session.stream({
-        language: this.state.sprache,
-        commitPolicy: "stable_prefix",
-        family: { kind: "parakeet", attContextRight: this.state.attContextRight },
-      });
-    });
-    await this.#queue.catch(() => {});
-    return true;
-  }
-
   beitragAendern(index, { text, sprecher }) {
     const b = this.state.beitraege[index];
     if (!b) return;
