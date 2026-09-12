@@ -224,3 +224,23 @@ test("Hat jemand im laufenden Text getippt, bleibt sein Text auch beim Neufassen
   assert.doesNotMatch(buch.markdown(), /Ganz anderer Anfang/);
   buch.schliessen();
 });
+
+test("Wer ohne ein Wort weitergibt, hinterlässt keine leere Überschrift", () => {
+  const kreis = kreisAttrappe();
+  kreis.state.aktiv = null;
+  const buch = new Protokollbuch(kreis, { zeitzone: zone });
+
+  kreis.state.aktiv = { sprecher: "Timo", begonnen: zeit("14:20"), committed: "", tentative: "" };
+  buch.nachziehen();
+  assert.match(buch.markdown(), /## Timo · 14:20/);
+
+  // Timo gibt weiter, ohne etwas gesagt zu haben. Eva fängt an.
+  kreis.state.aktiv = { sprecher: "Eva", begonnen: zeit("14:21"), committed: "", tentative: "" };
+  buch.nachziehen();
+  kreis.state.aktiv.committed = "Ich fange an.";
+  buch.nachziehen();
+
+  assert.doesNotMatch(buch.markdown(), /## Timo/);
+  assert.match(buch.markdown(), /## Agnes · 14:09\n\nIch sehe uns im Frühjahr, mit zwanzig Leuten\.\n\n## Eva · 14:21\n\nIch fange an\.$/);
+  buch.schliessen();
+});

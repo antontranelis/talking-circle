@@ -114,6 +114,9 @@ export class Protokollbuch {
     }
     if (this.#laufendSeit !== aktiv.begonnen) {
       // Ein neuer Beitrag: seine Überschrift bekommt das Dokument ans Ende.
+      // Blieb der vorige ohne ein Wort, verschwindet seine Überschrift — sie
+      // stünde sonst als leerer Absatz im Protokoll.
+      this.#leereUeberschriftEntfernen();
       const kopf = `## ${aktiv.sprecher} · ${uhrzeit(aktiv.begonnen, this.#zone)}\n\n`;
       const bisher = this.#text.toString();
       this.#anhaengen((bisher.endsWith("\n\n") ? "" : bisher.endsWith("\n") ? "\n" : "\n\n") + kopf);
@@ -146,6 +149,15 @@ export class Protokollbuch {
     // Überschrift.
     const stelle = warLeer ? roh.length : roh.replace(/\s+$/, "").length;
     this.#schreiben(() => this.#text.insert(stelle, warLeer ? dazu.trimStart() : dazu));
+  }
+
+  #leereUeberschriftEntfernen() {
+    if (this.#laufendSeit === null || this.#angehaengt) return;
+    const roh = this.#text.toString();
+    const rumpf = this.#laufenderRumpf(roh);
+    if (!rumpf || rumpf.text.trim()) return;
+    const kopf = roh.lastIndexOf("\n## ");
+    this.#schreiben(() => this.#text.delete(kopf + 1, roh.length - kopf - 1));
   }
 
   // Der Text unter der letzten Überschrift — das ist der laufende Beitrag.
