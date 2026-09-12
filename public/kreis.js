@@ -593,8 +593,15 @@ function zeichneVerlauf() {
     );
     return;
   }
+  const folgen = amEnde(ol);
   ol.replaceChildren(...stuecke);
-  ol.scrollTop = ol.scrollHeight;
+  if (folgen) ol.scrollTop = ol.scrollHeight;
+}
+
+// Der Verlauf folgt dem Gesprochenen nur, solange man unten steht. Wer
+// hochgescrollt hat, um nachzulesen, wird nicht wieder nach unten gezogen.
+function amEnde(ol) {
+  return ol.scrollHeight - ol.scrollTop - ol.clientHeight < 40;
 }
 
 function kopfzeile(name, zeit) {
@@ -670,9 +677,10 @@ function zeichneLive() {
   if (!aktiv || !karteNode || karteNode.dataset.begonnen !== aktiv.begonnen) {
     zeichneVerlauf();
   } else {
-    karteFuellen(karteNode, aktiv);
     const ol = $("beitraege");
-    ol.scrollTop = ol.scrollHeight;
+    const folgen = amEnde(ol);
+    karteFuellen(karteNode, aktiv);
+    if (folgen) ol.scrollTop = ol.scrollHeight;
   }
   uhrStellen();
 }
