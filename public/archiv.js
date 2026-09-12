@@ -87,10 +87,7 @@ async function zeigeRunde(id) {
 }
 
 async function zeigeListe() {
-  const [runden, papierkorb] = await Promise.all([
-    frage(imPapierkorb ? "/api/papierkorb" : "/api/runden"),
-    frage(imPapierkorb ? "/api/runden" : "/api/papierkorb"),
-  ]);
+  const [runden, papierkorb] = await Promise.all([frage("/api/runden"), frage("/api/papierkorb")]);
   const alle = imPapierkorb ? papierkorb : runden;
   const weg = imPapierkorb ? runden : papierkorb;
   $("quelle-runden").setAttribute("aria-checked", String(!imPapierkorb));
