@@ -130,6 +130,27 @@ test("Was jemand in den laufenden Beitrag tippt, steht danach nur einmal da", as
   buch.schliessen();
 });
 
+test("Ein anderer Name über dem laufenden Beitrag wird übernommen — auch ohne neuen Text", async () => {
+  // Der Fehler, den das hier abfängt: Nur der Text des laufenden Beitrags
+  // wurde verglichen. Wer bloß den Sprecher korrigierte, sah nichts passieren.
+  const kreis = kreisAttrappe();
+  const buch = new Protokollbuch(kreis, { zeitzone: zone });
+
+  const gerät = new Y.Doc();
+  Y.applyUpdate(gerät, buch.stand());
+  const text = gerät.getText("protokoll");
+  const stelle = text.toString().indexOf("## Janosch");
+  gerät.transact(() => {
+    text.delete(stelle + 3, "Janosch".length);
+    text.insert(stelle + 3, "Der echte Emil");
+  });
+  buch.vonAussen(Y.encodeStateAsUpdate(gerät), "gerät");
+  await buch.uebernehmen();
+
+  assert.equal(kreis.state.aktiv.sprecher, "Der echte Emil");
+  buch.schliessen();
+});
+
 test("Zwei Geräte sehen dieselbe Änderung", () => {
   const kreis = kreisAttrappe();
   const hinaus = [];

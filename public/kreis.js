@@ -645,6 +645,7 @@ function laufendeKarte(aktiv) {
   const li = document.createElement("li");
   li.className = "laufend";
   li.dataset.begonnen = aktiv.begonnen;
+  li.dataset.sprecher = aktiv.sprecher;
   li.append(kopfzeile(aktiv.sprecher, aktiv.begonnen));
   karteFuellen(li, aktiv);
   return li;
@@ -674,7 +675,13 @@ function karteFuellen(li, aktiv) {
 
 function zeichneLive() {
   const aktiv = state.aktiv;
-  if (!aktiv || !karteNode || karteNode.dataset.begonnen !== aktiv.begonnen) {
+  // Neuer Beitrag oder korrigierter Name: die Karte wird neu gebaut.
+  if (
+    !aktiv ||
+    !karteNode ||
+    karteNode.dataset.begonnen !== aktiv.begonnen ||
+    karteNode.dataset.sprecher !== aktiv.sprecher
+  ) {
     zeichneVerlauf();
   } else {
     const ol = $("beitraege");

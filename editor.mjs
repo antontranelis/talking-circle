@@ -184,7 +184,9 @@ export class Protokollbuch {
       titel === state.titel &&
       vorher.length === beitraege.length &&
       vorher.every((b, i) => b.text === beitraege[i].text && b.sprecher === beitraege[i].sprecher) &&
-      (!state.aktiv || (laufend?.text ?? "") === state.aktiv.committed.trim());
+      (!state.aktiv ||
+        ((laufend?.text ?? "") === state.aktiv.committed.trim() &&
+          (laufend?.sprecher ?? state.aktiv.sprecher) === state.aktiv.sprecher));
     if (gleich) return null;
 
     const beschreibung =
