@@ -325,6 +325,10 @@ kbd { font: 0.75em/1 var(--schrift-mono); border: 1px solid currentColor; opacit
   display: grid; place-items: center; opacity: 0.85;
 }
 .rec-griff:hover { border-color: transparent; opacity: 1; }
+/* Sichtbar ist der Punkt nur, wenn dieses Gerät aufnimmt. Der Griff zum
+   Herholen bleibt in der Ecke, zeigt sich aber erst beim Darüberfahren. */
+.rec-griff:not(.hier) { opacity: 0; }
+.rec-griff:not(.hier):hover, .rec-griff:not(.hier):focus-visible { opacity: 0.6; }
 .rec-griff i { display: block; width: 13px; height: 13px; border-radius: 999px; border: 2px solid var(--gedimmt-tief); }
 .rec-griff.hier i { background: var(--rot); border-color: transparent; box-shadow: 0 0 0 5px rgba(224, 87, 74, 0.16); }
 .rec-griff.gedimmt { opacity: 0.5; }

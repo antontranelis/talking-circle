@@ -50,7 +50,9 @@ async function mikroOeffnen() {
       ...(geraeteId ? { deviceId: { exact: geraeteId } } : {}),
     },
   });
-  const ctx = new AudioContext({ sampleRate: 16000 });
+  // Ohne feste Rate: Der Kontext folgt dem Mikrofon, der Worklet rechnet auf
+  // 16 kHz um. Firefox verweigert sonst die Verbindung („different sample-rate").
+  const ctx = new AudioContext();
   await ctx.audioWorklet.addModule("pcm-worklet.js");
   const knoten = new AudioWorkletNode(ctx, "pcm-worklet");
   knoten.port.onmessage = ({ data }) => {
